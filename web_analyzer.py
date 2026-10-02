@@ -2,6 +2,7 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal, get_args
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import httpx
@@ -30,9 +31,19 @@ class Assessment(BaseModel):
     note: str
     suggested_fix: str | None = None
 
+AgentRule = Literal["soft-404", "redirect-to-homepage", "redirect-to-login", "text-mismatch", "other"]
+NEEDS_PAGE_TEXT = {"soft-404", "text-mismatch"}
+
+class AgentFinding(BaseModel):
+    url: str
+    rule: AgentRule
+    evidence: str
+    note: str
+
 class SubmitReport(BaseModel):
     narrative: str
     assessments: list[Assessment]
+    agent_findings: list[AgentFinding] = []
 
 
 class Finding(BaseModel):
@@ -45,6 +56,9 @@ class Finding(BaseModel):
     status: int | None
     error: str | None
     assessment: Assessment | None = None
+    source: str = "tools"
+    evidence: str | None = None
+    note: str | None = None
 
 class Report(BaseModel):
     target: str
@@ -57,6 +71,9 @@ class Report(BaseModel):
     counts: dict[str, int]
     narrative: str | None  # None for the static baseline, which has no LLM
     findings: list[Finding]
+    unverified_agent_findings: list[AgentFinding] = []
+    rejected_submissions: int = 0  # times the agent submitted findings it hadn't checked
+    unbacked_claims: int = 0  # total unbacked findings across those submissions
 
 
 def check_url(url):
@@ -135,6 +152,43 @@ def extract_links(url):
 def check_urls(urls):
     return [check_url(url) for url in urls]
 
+def fetch_page_text(url, max_chars=2000):
+    # returns the page's title and a short piece of its visible text
+    result = {"url": url, "final_url": None, "status": None, "content_type": None,
+              "title": None, "heading": None, "text": None, "truncated": False, "error": None}
+    try:
+        response = client.get(url)
+    except Exception as e:
+        result["error"] = str(e) or type(e).__name__
+        return result
+    content_type = response.headers.get("content-type", "")
+    result.update(final_url=str(response.url), status=response.status_code,
+                  content_type=content_type.split(";")[0] or None)
+    if "text/html" not in content_type:
+        return result  # PDFs, images, ...: no text to read
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    for tag in soup(["script", "style", "noscript", "template"]):
+        tag.decompose()  # not visible to a reader
+    h1 = soup.find("h1")
+    # Prefer the main content, so menus and footers don't use up the text budget
+    root = soup.find("main") or soup.body or soup
+    text = " ".join(root.get_text(" ", strip=True).split())
+    result.update(
+        title=(soup.title.get_text(strip=True) or None) if soup.title else None,
+        heading=(h1.get_text(" ", strip=True) or None) if h1 else None,
+        text=text[:max_chars],
+        truncated=len(text) > max_chars,
+    )
+    return result
+
+def hide_verdict(tool_name, tool_result):
+    if tool_name == "check_url":
+        return {key: value for key, value in tool_result.items() if key != "verdict"}
+    if tool_name == "check_urls":
+        return [{key: value for key, value in result.items() if key != "verdict"} for result in tool_result]
+    return tool_result
+
 def process_tool(tool_name, tool_input):
     if tool_name == "check_url":
         return check_url(tool_input["url"])
@@ -142,6 +196,8 @@ def process_tool(tool_name, tool_input):
         return extract_links(tool_input["url"])
     elif tool_name == "check_urls":
         return check_urls(tool_input["urls"])
+    elif tool_name == "fetch_page_text":
+        return fetch_page_text(tool_input["url"])
     elif tool_name == "submit_report":
         try:
             return SubmitReport.model_validate(tool_input)
@@ -150,7 +206,16 @@ def process_tool(tool_name, tool_input):
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
 
-def record_result(tool_name, tool_result, link_info, checks):
+def unbacked_message(unbacked):
+    lines = []
+    for f in unbacked:
+        reason = "you never read that page" if f.rule in NEEDS_PAGE_TEXT else "no tool result shows this URL"
+        lines.append(f"- {f.rule} for {f.url}: {reason}")
+    return ("Report not accepted. These findings are not backed by anything you looked at:\n"
+            + "\n".join(lines)
+            + "\nCheck them (use fetch_page_text to read a page) or remove them, then call submit_report again.")
+
+def record_result(tool_name, tool_result, link_info, checks, fetched=None):
     if tool_name == "extract_links":
         for link in tool_result["links"]:
             link_info.setdefault(link["url"], {"page": tool_result["final_url"], "tag": link["tag"], "text": link["text"]})
@@ -159,6 +224,8 @@ def record_result(tool_name, tool_result, link_info, checks):
     elif tool_name == "check_urls":
         for result in tool_result:
             checks[result["url"]] = result
+    elif tool_name == "fetch_page_text" and fetched is not None:
+        fetched[tool_result["url"]] = tool_result
 
 def build_findings(checks, link_info, assessments):
     assessment_by_url = {a.url: a for a in assessments}
@@ -189,12 +256,45 @@ def build_findings(checks, link_info, assessments):
         ))
     return findings
 
+def is_backed(agent_finding, checks, fetched):
+    if agent_finding.rule in NEEDS_PAGE_TEXT:
+        return agent_finding.url in fetched  # it must have read the page
+    return agent_finding.url in fetched or agent_finding.url in checks
+
+def build_agent_findings(agent_findings, checks, fetched, link_info, findings):
+    # Turn the agent's own findings into report findings, but only if a tool result backs them up
+    already_errors = {f.url for f in findings if f.severity == "error"}
+    verified, unverified = [], []
+    for agent_finding in agent_findings:
+        url = agent_finding.url
+        if not is_backed(agent_finding, checks, fetched):
+            unverified.append(agent_finding)
+            continue
+        if url in already_errors:
+            continue  # already reported as broken by the tools
+        info = link_info.get(url, {})
+        result = checks.get(url) or fetched.get(url, {})
+        verified.append(Finding(
+            rule=agent_finding.rule,
+            severity="warning",
+            page=info.get("page"),
+            url=url,
+            tag=info.get("tag"),
+            text=info.get("text"),
+            status=result.get("status"),
+            error=result.get("error"),
+            source="agent",
+            evidence=agent_finding.evidence,
+            note=agent_finding.note,
+        ))
+    return verified, unverified
+
 def main():
     tools = [
         {
             "name": "check_url",
-            "description": "Checks whether a single URL works and returns its status, redirects and a verdict "
-                           "(ok, redirect, broken, blocked or unreachable).",
+            "description": "Checks whether a single URL works and returns its status code, final URL, "
+                            "redirect chain and any connection error.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -223,8 +323,8 @@ def main():
         },
         {
             "name": "check_urls",
-            "description": "Checks whether multiple URLs work and returns their status, redirects and a verdict "
-                           "(ok, redirect, broken, blocked or unreachable).",
+            "description": "Checks whether multiple URLs work and returns their status code, final URL, "
+                            "redirect chain and any connection error.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -240,8 +340,22 @@ def main():
             }
         },
         {
+            "name": "fetch_page_text",
+            "description": "Fetches the title, first heading and a short snippet of visible text from a web page.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the web page to fetch text from."
+                    }
+                },
+                "required": ["url"]
+            }
+        },
+        {
             "name": "submit_report",
-            "description": "Hand in the final report. Call this once, after all links have been checked.",
+            "description": "Hand in the final report. Call this once, after you have finished investigating.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -262,19 +376,42 @@ def main():
                             },
                             "required": ["url", "likely_intentional", "note"]
                         }
+                    },
+                    "agent_findings": {
+                        "type": "array",
+                        "description": "Problems you found that the status code does not show, e.g. a page that returns 200 "
+                                       "but is an error page, a redirect to the homepage or a login page, or link text that "
+                                       "does not match the page it leads to. Empty if there are none.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "url": {"type": "string", "description": "The link with the problem, exactly as the tools returned it."},
+                                "rule": {"type": "string", "enum": list(get_args(AgentRule)), "description": "The kind of problem."},
+                                "evidence": {"type": "string", "description": "What in the tool results shows the problem, e.g. the page title or the final URL."},
+                                "note": {"type": "string", "description": "One or two sentences explaining the problem."}
+                            },
+                            "required": ["url", "rule", "evidence", "note"]
+                        }
                     }
                 },
-                "required": ["narrative", "assessments"]
+                "required": ["narrative", "assessments", "agent_findings"]
             }
         }
     ]
     
     system_prompt = """
-        You are a web link analyzer. Given a URL, always follow these steps:
-        1. Call extract_links on the URL.
-        2. Call check_urls once, with every extracted link.
-        3. Call submit_report with a short summary and one assessment for each broken, blocked or unreachable link.
-        Only state things the tools returned. You do not check accessibility, so do not comment on it.
+        You are a web link analyzer. Your goal is to find every link problem on the page the user gives you,
+        including problems that the status code alone does not reveal.
+
+        Start by extracting the links and checking all of them. Then look for anything suspicious and
+        investigate it with fetch_page_text, for example:
+        - an internal link that returns 200 but may be an error page ("not found", "página não encontrada")
+        - a redirect that ends on the homepage or on a login page
+        - a link whose text does not match the page it leads to
+        You don't need to fetch every page; you can fetch several pages at once. Keep the number of tool calls to a minimum necessary,
+        then call submit_report. Put the problems you found that the status code does not show in agent_findings.
+
+        Only report what the tools showed you. You do not check accessibility, so do not comment on it.
     """
     
     client = genai.Client(
@@ -295,6 +432,7 @@ def main():
     # What the tools found, filled in during the run
     link_info = {}
     checks = {}
+    fetched = {}
     target = None
     submitted = None
 
@@ -304,6 +442,10 @@ def main():
     llm_requests = 0
     input_tokens = 0
     output_tokens = 0
+
+    MAX_REJECTIONS = 2
+    rejected_submissions = 0
+    unbacked_claims = 0
 
     while True:
         if contents[-1].role == "model":
@@ -329,7 +471,7 @@ def main():
 
         # Answer every tool call in this response, not just the last one
         response_parts = []
-        for function_call in response.function_calls:
+        for function_call in sorted(response.function_calls, key=lambda call: call.name == "submit_report"):
             tool_name = function_call.name
             tool_input = function_call.args
             print(f"=====Gemini wants to use the {tool_name} tool=====")
@@ -337,14 +479,21 @@ def main():
             tool_result = process_tool(tool_name, tool_input)
 
             if isinstance(tool_result, SubmitReport):
-                submitted = tool_result
-                continue
+                unbacked = [f for f in tool_result.agent_findings if not is_backed(f, checks, fetched)]
+                if not unbacked or rejected_submissions >= MAX_REJECTIONS:
+                    submitted = tool_result
+                    continue
+                # Send the report back: the agent must look before it claims
+                rejected_submissions += 1
+                unbacked_claims += len(unbacked)
+                print(f"=====Report rejected: {len(unbacked)} unbacked finding(s)=====")
+                tool_result = {"error": unbacked_message(unbacked)}
 
             if tool_name == "extract_links" and target is None:
                 target = tool_input["url"]
-            record_result(tool_name, tool_result, link_info, checks)
+            record_result(tool_name, tool_result, link_info, checks, fetched)
             response_parts.append(
-                types.Part.from_function_response(name=tool_name, response={"result": tool_result})
+                types.Part.from_function_response(name=tool_name, response={"result": hide_verdict(tool_name, tool_result)})
             )
 
         if submitted is not None:
@@ -357,6 +506,8 @@ def main():
         print("=====No valid report was submitted=====")
         return
 
+    findings = build_findings(checks, link_info, submitted.assessments)
+    agent_findings, unverified = build_agent_findings(submitted.agent_findings, checks, fetched, link_info, findings)
     report = Report(
         target=target or user_message,
         model=MODEL_NAME,
@@ -367,11 +518,14 @@ def main():
         output_tokens=output_tokens,
         counts=dict(Counter(check["verdict"] for check in checks.values())),
         narrative=submitted.narrative,
-        findings=build_findings(checks, link_info, submitted.assessments),
+        findings=findings + agent_findings,
+        unverified_agent_findings=unverified,
+        rejected_submissions=rejected_submissions,
+        unbacked_claims=unbacked_claims,
     )
     report_json = report.model_dump_json(indent=2)
     print(report_json)
-    Path("report.json").write_text(report_json)
+    Path("reports/report.json").write_text(report_json)
     print("=====Report saved to report.json=====")
 
 

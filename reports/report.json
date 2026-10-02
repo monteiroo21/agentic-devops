@@ -1,0 +1,210 @@
+{
+  "target": "http://www.deadlinkcity.com/",
+  "model": "gemini-3.1-flash-lite",
+  "started_at": "2026-10-02T16:02:20.339691+00:00",
+  "duration_s": 17.7,
+  "llm_requests": 3,
+  "input_tokens": 9316,
+  "output_tokens": 836,
+  "counts": {
+    "ok": 5,
+    "broken": 9,
+    "unreachable": 1
+  },
+  "narrative": "The website http://www.deadlinkcity.com/ is a dedicated resource for testing link checkers, containing a large collection of broken, redirecting, and valid links. As expected for its purpose, many of the tested links return 404 errors or connection failures. These issues are intentional and serve to demonstrate the functionality of link-crawling tools.",
+  "findings": [
+    {
+      "rule": "broken-resource",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/missing-head-link-href.txt",
+      "tag": "link",
+      "text": null,
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/missing-head-link-href.txt",
+        "likely_intentional": true,
+        "note": "The site is intentionally populated with broken links for testing purposes. Most links returning 404 or connection errors are expected functionality for this domain.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/error-page.asp?e=404",
+      "tag": "a",
+      "text": "Errorcode 404",
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/error-page.asp?e=404",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/page-not-found.asp",
+      "tag": "a",
+      "text": "Non-existent page link to http://www.deadlinkcity.com/page-not-found.asp",
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/page-not-found.asp",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "unreachable",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.domaindoesnot.exist",
+      "tag": "a",
+      "text": "Non-existent domain link to http://www.domaindoesnot.exist",
+      "status": null,
+      "error": "[Errno -2] Name or service not known",
+      "assessment": {
+        "url": "http://www.domaindoesnot.exist",
+        "likely_intentional": true,
+        "note": "Intentionally broken link (non-existent domain).",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/default.asp?r=4",
+      "tag": "a",
+      "text": "301 redirection to an invalid link",
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/default.asp?r=4",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/disallowed/disallowed.html",
+      "tag": "a",
+      "text": "Missing, disallowed by robots.txt",
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/disallowed/disallowed.html",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/disallowed/nonexistent.html",
+      "tag": "a",
+      "text": "Missing, allowed by robots.txt",
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/disallowed/nonexistent.html",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-resource",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/missing-iframe-src.html",
+      "tag": "iframe",
+      "text": null,
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/missing-iframe-src.html",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-resource",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/images/missing-img-src.jpg",
+      "tag": "img",
+      "text": null,
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/images/missing-img-src.jpg",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "broken-resource",
+      "severity": "error",
+      "page": "http://www.deadlinkcity.com/",
+      "url": "http://www.deadlinkcity.com/missing-script-src.js",
+      "tag": "script",
+      "text": null,
+      "status": 404,
+      "error": null,
+      "assessment": {
+        "url": "http://www.deadlinkcity.com/missing-script-src.js",
+        "likely_intentional": true,
+        "note": "Intentionally broken link.",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    }
+  ],
+  "unverified_agent_findings": [],
+  "rejected_submissions": 0,
+  "unbacked_claims": 0
+}

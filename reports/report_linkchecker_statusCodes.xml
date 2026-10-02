@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- created by LinkChecker at 2026-09-30 18:25:21+001 -->
+<!-- Read the documentation at https://linkchecker.github.io/linkchecker/ -->
+<!-- Write comments and bugs to https://github.com/linkchecker/linkchecker/issues -->
+
+<linkchecker created="2026-09-30 18:25:21+001">
+  <urldata>
+    <url>https://the-internet.herokuapp.com/status_codes</url>
+    <realurl>https://the-internet.herokuapp.com/status_codes</realurl>
+    <extern>0</extern>
+    <dltime>0.000159</dltime>
+    <dlsize>2250</dlsize>
+    <checktime>1.877286</checktime>
+    <level>0</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/js/vendor/298279967.js</url>
+    <parent line="7" column="5">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/js/vendor/298279967.js</realurl>
+    <extern>0</extern>
+    <dlsize>132435</dlsize>
+    <checktime>0.169008</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/css/app.css</url>
+    <parent line="11" column="5">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/css/app.css</realurl>
+    <extern>0</extern>
+    <dlsize>353394</dlsize>
+    <checktime>1.432370</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/css/font-awesome.css</url>
+    <parent line="12" column="5">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/css/font-awesome.css</realurl>
+    <extern>0</extern>
+    <dlsize>28747</dlsize>
+    <checktime>1.595175</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/js/vendor/jquery-1.11.3.min.js</url>
+    <parent line="13" column="5">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/js/vendor/jquery-1.11.3.min.js</realurl>
+    <extern>0</extern>
+    <dlsize>95957</dlsize>
+    <checktime>1.837047</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/js/vendor/jquery-ui-1.11.4/jquery-ui.js</url>
+    <parent line="14" column="5">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/js/vendor/jquery-ui-1.11.4/jquery-ui.js</realurl>
+    <extern>0</extern>
+    <dlsize>470596</dlsize>
+    <checktime>2.019563</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/js/foundation/foundation.js</url>
+    <parent line="15" column="5">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/js/foundation/foundation.js</realurl>
+    <extern>0</extern>
+    <dlsize>12715</dlsize>
+    <checktime>2.300207</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/img/forkme_right_green_007200.png</url>
+    <name>Fork me on GitHub</name>
+    <parent line="34" column="60">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/img/forkme_right_green_007200.png</realurl>
+    <extern>0</extern>
+    <dlsize>7660</dlsize>
+    <checktime>2.438188</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/js/foundation/foundation.alerts.js</url>
+    <parent line="16" column="5">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/js/foundation/foundation.alerts.js</realurl>
+    <extern>0</extern>
+    <dlsize>1392</dlsize>
+    <checktime>2.791267</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>status_codes/200</url>
+    <name>200</name>
+    <parent line="44" column="11">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/status_codes/200</realurl>
+    <extern>0</extern>
+    <dlsize>1738</dlsize>
+    <checktime>2.979180</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>status_codes/301</url>
+    <name>301</name>
+    <parent line="45" column="11">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/status_codes/301</realurl>
+    <extern>0</extern>
+    <dlsize>1738</dlsize>
+    <checktime>2.114251</checktime>
+    <level>1</level>
+    <valid result="301 Moved Permanently">1</valid>
+  </urldata>
+  <urldata>
+    <url>http://www.iana.org/assignments/http-status-codes/http-status-codes.xhtml</url>
+    <name>here</name>
+    <parent line="39" column="254">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>http://www.iana.org/assignments/http-status-codes</realurl>
+    <extern>1</extern>
+    <checktime>4.078568</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.iana.org/assignments/http-status-codes' status: 302 Found.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>status_codes/404</url>
+    <name>404</name>
+    <parent line="46" column="11">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/status_codes/404</realurl>
+    <extern>0</extern>
+    <dlsize>1738</dlsize>
+    <checktime>2.512878</checktime>
+    <level>1</level>
+    <valid result="404 Not Found">0</valid>
+  </urldata>
+  <urldata>
+    <url>http://elementalselenium.com/</url>
+    <name>Elemental Selenium</name>
+    <parent line="58" column="53">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://elementalselenium.com/</realurl>
+    <extern>1</extern>
+    <dlsize>3363</dlsize>
+    <checktime>2.315691</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `https://elementalselenium.com/' status: 301 Moved Permanently.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>https://github.com/tourdedave/the-internet</url>
+    <parent line="34" column="7">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://github.com/saucelabs/the-internet</realurl>
+    <extern>1</extern>
+    <checktime>4.598904</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `https://github.com/saucelabs/the-internet' status: 301 Moved Permanently.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>status_codes/500</url>
+    <name>500</name>
+    <parent line="47" column="11">https://the-internet.herokuapp.com/status_codes</parent>
+    <realurl>https://the-internet.herokuapp.com/status_codes/500</realurl>
+    <extern>0</extern>
+    <dlsize>1738</dlsize>
+    <checktime>3.081534</checktime>
+    <level>1</level>
+    <valid result="500 Internal Server Error">0</valid>
+  </urldata>
+</linkchecker>
+<!-- Stopped checking at 2026-09-30 18:25:29+001 (7 seconds) -->
