@@ -1,0 +1,1111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- created by LinkChecker at 2026-10-04 18:13:51+001 -->
+<!-- Read the documentation at https://linkchecker.github.io/linkchecker/ -->
+<!-- Write comments and bugs to https://github.com/linkchecker/linkchecker/issues -->
+
+<linkchecker created="2026-10-04 18:13:51+001">
+  <urldata>
+    <url>https://books.toscrape.com/</url>
+    <realurl>https://books.toscrape.com/</realurl>
+    <extern>0</extern>
+    <dltime>0.229279</dltime>
+    <dlsize>51294</dlsize>
+    <checktime>0.857482</checktime>
+    <level>0</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/js/bootstrap-datetimepicker/bootstrap-datetimepicker.css</url>
+    <parent line="32" column="5">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/js/bootstrap-datetimepicker/bootstrap-datetimepicker.css</realurl>
+    <extern>0</extern>
+    <dlsize>12351</dlsize>
+    <checktime>0.466527</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>index.html</url>
+    <name>Books to Scrape</name>
+    <parent line="56" column="42">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>51294</dlsize>
+    <checktime>0.867231</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books_1/index.html</url>
+    <name>Books</name>
+    <parent line="91" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books_1/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>50607</dlsize>
+    <checktime>1.131786</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/mystery_3/index.html</url>
+    <name>Mystery</name>
+    <parent line="111" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/mystery_3/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>50388</dlsize>
+    <checktime>1.684053</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/css/datetimepicker.css</url>
+    <parent line="33" column="5">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/css/datetimepicker.css</realurl>
+    <extern>0</extern>
+    <dlsize>352</dlsize>
+    <checktime>1.851052</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/travel_2/index.html</url>
+    <name>Travel</name>
+    <parent line="101" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/travel_2/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>37009</dlsize>
+    <checktime>2.453983</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/historical-fiction_4/index.html</url>
+    <name>Historical Fiction</name>
+    <parent line="121" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>50109</dlsize>
+    <checktime>2.696823</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/favicon.ico</url>
+    <parent line="23" column="13">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/favicon.ico</realurl>
+    <extern>0</extern>
+    <dlsize>1150</dlsize>
+    <checktime>3.069260</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/css/styles.css</url>
+    <parent line="30" column="9">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/css/styles.css</realurl>
+    <extern>0</extern>
+    <dlsize>215100</dlsize>
+    <checktime>3.174943</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/sequential-art_5/index.html</url>
+    <name>Sequential Art</name>
+    <parent line="131" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>51455</dlsize>
+    <checktime>3.242560</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/classics_6/index.html</url>
+    <name>Classics</name>
+    <parent line="141" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/classics_6/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>47874</dlsize>
+    <checktime>3.641166</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/philosophy_7/index.html</url>
+    <name>Philosophy</name>
+    <parent line="151" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/philosophy_7/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>37032</dlsize>
+    <checktime>3.711908</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/romance_8/index.html</url>
+    <name>Romance</name>
+    <parent line="161" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/romance_8/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>50397</dlsize>
+    <checktime>3.991914</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/womens-fiction_9/index.html</url>
+    <name>Womens Fiction</name>
+    <parent line="171" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/womens-fiction_9/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>45308</dlsize>
+    <checktime>3.943021</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/fiction_10/index.html</url>
+    <name>Fiction</name>
+    <parent line="181" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/fiction_10/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>49677</dlsize>
+    <checktime>4.297727</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/childrens_11/index.html</url>
+    <name>Childrens</name>
+    <parent line="191" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/childrens_11/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>49864</dlsize>
+    <checktime>4.107599</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/religion_12/index.html</url>
+    <name>Religion</name>
+    <parent line="201" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/religion_12/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>30933</dlsize>
+    <checktime>4.248541</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/nonfiction_13/index.html</url>
+    <name>Nonfiction</name>
+    <parent line="211" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/nonfiction_13/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>52725</dlsize>
+    <checktime>4.520907</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/music_14/index.html</url>
+    <name>Music</name>
+    <parent line="221" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/music_14/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>40193</dlsize>
+    <checktime>4.668401</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/default_15/index.html</url>
+    <name>Default</name>
+    <parent line="231" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/default_15/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>51474</dlsize>
+    <checktime>5.167753</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/science-fiction_16/index.html</url>
+    <name>Science Fiction</name>
+    <parent line="241" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/science-fiction_16/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>44447</dlsize>
+    <checktime>4.866663</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/sports-and-games_17/index.html</url>
+    <name>Sports and Games</name>
+    <parent line="251" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/sports-and-games_17/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>27558</dlsize>
+    <checktime>4.592361</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/add-a-comment_18/index.html</url>
+    <name>Add a comment</name>
+    <parent line="261" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/add-a-comment_18/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>50931</dlsize>
+    <checktime>4.455918</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/fantasy_19/index.html</url>
+    <name>Fantasy</name>
+    <parent line="271" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/fantasy_19/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>51248</dlsize>
+    <checktime>4.400476</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/new-adult_20/index.html</url>
+    <name>New Adult</name>
+    <parent line="281" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/new-adult_20/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>28732</dlsize>
+    <checktime>4.196323</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/young-adult_21/index.html</url>
+    <name>Young Adult</name>
+    <parent line="291" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/young-adult_21/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>50167</dlsize>
+    <checktime>4.225246</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/science_22/index.html</url>
+    <name>Science</name>
+    <parent line="301" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/science_22/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>42547</dlsize>
+    <checktime>4.245800</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/poetry_23/index.html</url>
+    <name>Poetry</name>
+    <parent line="311" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/poetry_23/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>48207</dlsize>
+    <checktime>3.810734</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/paranormal_24/index.html</url>
+    <name>Paranormal</name>
+    <parent line="321" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/paranormal_24/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21385</dlsize>
+    <checktime>3.759364</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/art_25/index.html</url>
+    <name>Art</name>
+    <parent line="331" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/art_25/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>31769</dlsize>
+    <checktime>3.695303</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/psychology_26/index.html</url>
+    <name>Psychology</name>
+    <parent line="341" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/psychology_26/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>30968</dlsize>
+    <checktime>3.336828</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/autobiography_27/index.html</url>
+    <name>Autobiography</name>
+    <parent line="351" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/autobiography_27/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>33034</dlsize>
+    <checktime>3.647209</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/parenting_28/index.html</url>
+    <name>Parenting</name>
+    <parent line="361" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/parenting_28/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21492</dlsize>
+    <checktime>3.759014</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/adult-fiction_29/index.html</url>
+    <name>Adult Fiction</name>
+    <parent line="371" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/adult-fiction_29/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21377</dlsize>
+    <checktime>3.503170</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/humor_30/index.html</url>
+    <name>Humor</name>
+    <parent line="381" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/humor_30/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>35542</dlsize>
+    <checktime>3.582104</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/horror_31/index.html</url>
+    <name>Horror</name>
+    <parent line="391" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/horror_31/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>44510</dlsize>
+    <checktime>3.641886</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/history_32/index.html</url>
+    <name>History</name>
+    <parent line="401" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/history_32/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>49302</dlsize>
+    <checktime>3.725978</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/food-and-drink_33/index.html</url>
+    <name>Food and Drink</name>
+    <parent line="411" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/food-and-drink_33/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>54124</dlsize>
+    <checktime>3.720990</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/christian-fiction_34/index.html</url>
+    <name>Christian Fiction</name>
+    <parent line="421" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/christian-fiction_34/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>28767</dlsize>
+    <checktime>3.868784</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/business_35/index.html</url>
+    <name>Business</name>
+    <parent line="431" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/business_35/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>39006</dlsize>
+    <checktime>3.955879</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/biography_36/index.html</url>
+    <name>Biography</name>
+    <parent line="441" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/biography_36/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>27988</dlsize>
+    <checktime>3.921235</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/thriller_37/index.html</url>
+    <name>Thriller</name>
+    <parent line="451" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/thriller_37/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>36067</dlsize>
+    <checktime>3.725870</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/contemporary_38/index.html</url>
+    <name>Contemporary</name>
+    <parent line="461" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/contemporary_38/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>24345</dlsize>
+    <checktime>3.548898</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/spirituality_39/index.html</url>
+    <name>Spirituality</name>
+    <parent line="471" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/spirituality_39/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>29649</dlsize>
+    <checktime>3.806296</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/academic_40/index.html</url>
+    <name>Academic</name>
+    <parent line="481" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/academic_40/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21359</dlsize>
+    <checktime>3.910009</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/self-help_41/index.html</url>
+    <name>Self Help</name>
+    <parent line="491" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/self-help_41/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>27997</dlsize>
+    <checktime>3.708130</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/historical_42/index.html</url>
+    <name>Historical</name>
+    <parent line="501" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/historical_42/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>22924</dlsize>
+    <checktime>3.822812</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/christian_43/index.html</url>
+    <name>Christian</name>
+    <parent line="511" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/christian_43/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>24662</dlsize>
+    <checktime>3.837749</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/suspense_44/index.html</url>
+    <name>Suspense</name>
+    <parent line="521" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/suspense_44/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21362</dlsize>
+    <checktime>3.646406</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/short-stories_45/index.html</url>
+    <name>Short Stories</name>
+    <parent line="531" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/short-stories_45/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21264</dlsize>
+    <checktime>3.438899</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/novels_46/index.html</url>
+    <name>Novels</name>
+    <parent line="541" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/novels_46/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21456</dlsize>
+    <checktime>3.441930</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/health_47/index.html</url>
+    <name>Health</name>
+    <parent line="551" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/health_47/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>26240</dlsize>
+    <checktime>3.316906</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/politics_48/index.html</url>
+    <name>Politics</name>
+    <parent line="561" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/politics_48/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>24717</dlsize>
+    <checktime>3.398378</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/cultural_49/index.html</url>
+    <name>Cultural</name>
+    <parent line="571" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/cultural_49/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21269</dlsize>
+    <checktime>3.231820</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/erotica_50/index.html</url>
+    <name>Erotica</name>
+    <parent line="581" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/erotica_50/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21248</dlsize>
+    <checktime>3.272227</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/category/books/crime_51/index.html</url>
+    <name>Crime</name>
+    <parent line="591" column="25">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/category/books/crime_51/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>21493</dlsize>
+    <checktime>3.353135</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/a-light-in-the-attic_1000/index.html</url>
+    <parent line="665" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>9279</dlsize>
+    <checktime>2.859000</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/2c/da/2cdad67c44b002e7ead0cc35693c0e8b.jpg</url>
+    <name>A Light in the Attic</name>
+    <parent line="665" column="78">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/2c/da/2cdad67c44b002e7ead0cc35693c0e8b.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>9876</dlsize>
+    <checktime>2.987387</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/tipping-the-velvet_999/index.html</url>
+    <parent line="740" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/tipping-the-velvet_999/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>10918</dlsize>
+    <checktime>2.998963</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/26/0c/260c6ae16bce31c8f8c95daddd9f4a1c.jpg</url>
+    <name>Tipping the Velvet</name>
+    <parent line="740" column="75">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/26/0c/260c6ae16bce31c8f8c95daddd9f4a1c.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>7095</dlsize>
+    <checktime>2.716850</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/soumission_998/index.html</url>
+    <parent line="815" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/soumission_998/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>12431</dlsize>
+    <checktime>2.864658</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/3e/ef/3eef99c9d9adef34639f510662022830.jpg</url>
+    <name>Soumission</name>
+    <parent line="815" column="67">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/3e/ef/3eef99c9d9adef34639f510662022830.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>4062</dlsize>
+    <checktime>2.963042</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/sharp-objects_997/index.html</url>
+    <parent line="890" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/sharp-objects_997/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>14847</dlsize>
+    <checktime>2.998094</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/32/51/3251cf3a3412f53f339e42cac2134093.jpg</url>
+    <name>Sharp Objects</name>
+    <parent line="890" column="70">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/32/51/3251cf3a3412f53f339e42cac2134093.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>8442</dlsize>
+    <checktime>3.069838</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/sapiens-a-brief-history-of-humankind_996/index.html</url>
+    <parent line="965" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/sapiens-a-brief-history-of-humankind_996/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>17026</dlsize>
+    <checktime>3.051969</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/be/a5/bea5697f2534a2f86a3ef27b5a8c12a6.jpg</url>
+    <name>Sapiens: A Brief History of Humankind</name>
+    <parent line="965" column="93">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/be/a5/bea5697f2534a2f86a3ef27b5a8c12a6.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>7986</dlsize>
+    <checktime>3.273268</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/the-requiem-red_995/index.html</url>
+    <parent line="1040" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/the-requiem-red_995/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>16468</dlsize>
+    <checktime>3.730241</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/68/33/68339b4c9bc034267e1da611ab3b34f8.jpg</url>
+    <name>The Requiem Red</name>
+    <parent line="1040" column="72">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/68/33/68339b4c9bc034267e1da611ab3b34f8.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>9798</dlsize>
+    <checktime>3.637415</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/the-dirty-little-secrets-of-getting-your-dream-job_994/index.html</url>
+    <parent line="1115" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/the-dirty-little-secrets-of-getting-your-dream-job_994/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>19806</dlsize>
+    <checktime>4.070038</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/92/27/92274a95b7c251fea59a2b8a78275ab4.jpg</url>
+    <name>The Dirty Little Secrets of Getting Your Dream Job</name>
+    <parent line="1115" column="107">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/92/27/92274a95b7c251fea59a2b8a78275ab4.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>10740</dlsize>
+    <checktime>4.216475</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/the-coming-woman-a-novel-based-on-the-life-of-the-infamous-feminist-victoria-woodhull_993/index.html</url>
+    <parent line="1190" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/the-coming-woman-a-novel-based-on-the-life-of-the-infamous-feminist-victoria-woodhull_993/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>23375</dlsize>
+    <checktime>4.291233</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/3d/54/3d54940e57e662c4dd1f3ff00c78cc64.jpg</url>
+    <name>The Coming Woman: A Novel Based on the Life of the Infamous Feminist, Victoria Woodhull</name>
+    <parent line="1190" column="142">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/3d/54/3d54940e57e662c4dd1f3ff00c78cc64.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>9693</dlsize>
+    <checktime>4.117036</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/the-boys-in-the-boat-nine-americans-and-their-epic-quest-for-gold-at-the-1936-berlin-olympics_992/index.html</url>
+    <parent line="1265" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/the-boys-in-the-boat-nine-americans-and-their-epic-quest-for-gold-at-the-1936-berlin-olympics_992/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>20872</dlsize>
+    <checktime>3.788913</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/66/88/66883b91f6804b2323c8369331cb7dd1.jpg</url>
+    <name>The Boys in the Boat: Nine Americans and Their Epic Quest for Gold at the 1936 Berlin Olympics</name>
+    <parent line="1265" column="150">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/66/88/66883b91f6804b2323c8369331cb7dd1.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>8783</dlsize>
+    <checktime>3.788333</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/the-black-maria_991/index.html</url>
+    <parent line="1340" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/the-black-maria_991/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>22698</dlsize>
+    <checktime>3.537721</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/58/46/5846057e28022268153beff6d352b06c.jpg</url>
+    <name>The Black Maria</name>
+    <parent line="1340" column="72">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/58/46/5846057e28022268153beff6d352b06c.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>3915</dlsize>
+    <checktime>3.279999</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/starving-hearts-triangular-trade-trilogy-1_990/index.html</url>
+    <parent line="1415" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/starving-hearts-triangular-trade-trilogy-1_990/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>19216</dlsize>
+    <checktime>2.967396</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/be/f4/bef44da28c98f905a3ebec0b87be8530.jpg</url>
+    <name>Starving Hearts (Triangular Trade Trilogy, #1)</name>
+    <parent line="1415" column="99">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/be/f4/bef44da28c98f905a3ebec0b87be8530.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>11932</dlsize>
+    <checktime>3.149483</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/shakespeares-sonnets_989/index.html</url>
+    <parent line="1490" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/shakespeares-sonnets_989/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>18441</dlsize>
+    <checktime>2.760977</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/10/48/1048f63d3b5061cd2f424d20b3f9b666.jpg</url>
+    <name>Shakespeare's Sonnets</name>
+    <parent line="1490" column="77">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/10/48/1048f63d3b5061cd2f424d20b3f9b666.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>8157</dlsize>
+    <checktime>3.033975</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/set-me-free_988/index.html</url>
+    <parent line="1565" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/set-me-free_988/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>18286</dlsize>
+    <checktime>2.968023</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/5b/88/5b88c52633f53cacf162c15f4f823153.jpg</url>
+    <name>Set Me Free</name>
+    <parent line="1565" column="68">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/5b/88/5b88c52633f53cacf162c15f4f823153.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>7864</dlsize>
+    <checktime>3.257507</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/scott-pilgrims-precious-little-life-scott-pilgrim-1_987/index.html</url>
+    <parent line="1640" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/scott-pilgrims-precious-little-life-scott-pilgrim-1_987/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>18760</dlsize>
+    <checktime>3.448258</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/94/b1/94b1b8b244bce9677c2f29ccc890d4d2.jpg</url>
+    <name>Scott Pilgrim's Precious Little Life (Scott Pilgrim #1)</name>
+    <parent line="1640" column="108">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/94/b1/94b1b8b244bce9677c2f29ccc890d4d2.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>12405</dlsize>
+    <checktime>3.534068</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/rip-it-up-and-start-again_986/index.html</url>
+    <parent line="1715" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/rip-it-up-and-start-again_986/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>18360</dlsize>
+    <checktime>3.377435</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/81/c4/81c4a973364e17d01f217e1188253d5e.jpg</url>
+    <name>Rip it Up and Start Again</name>
+    <parent line="1715" column="82">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/81/c4/81c4a973364e17d01f217e1188253d5e.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>11990</dlsize>
+    <checktime>3.527071</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/our-band-could-be-your-life-scenes-from-the-american-indie-underground-1981-1991_985/index.html</url>
+    <parent line="1790" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/our-band-could-be-your-life-scenes-from-the-american-indie-underground-1981-1991_985/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>18795</dlsize>
+    <checktime>3.793607</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/54/60/54607fe8945897cdcced0044103b10b6.jpg</url>
+    <name>Our Band Could Be Your Life: Scenes from the American Indie Underground, 1981-1991</name>
+    <parent line="1790" column="137">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/54/60/54607fe8945897cdcced0044103b10b6.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>9992</dlsize>
+    <checktime>3.550820</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/olio_984/index.html</url>
+    <parent line="1865" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/olio_984/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>19527</dlsize>
+    <checktime>4.019016</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/55/33/553310a7162dfbc2c6d19a84da0df9e1.jpg</url>
+    <name>Olio</name>
+    <parent line="1865" column="61">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/55/33/553310a7162dfbc2c6d19a84da0df9e1.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>2919</dlsize>
+    <checktime>3.724239</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/mesaerion-the-best-science-fiction-stories-1800-1849_983/index.html</url>
+    <parent line="1940" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/mesaerion-the-best-science-fiction-stories-1800-1849_983/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>19954</dlsize>
+    <checktime>3.611097</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/09/a3/09a3aef48557576e1a85ba7efea8ecb7.jpg</url>
+    <name>Mesaerion: The Best Science Fiction Stories 1800-1849</name>
+    <parent line="1940" column="109">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/09/a3/09a3aef48557576e1a85ba7efea8ecb7.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>9581</dlsize>
+    <checktime>3.495702</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/libertarianism-for-beginners_982/index.html</url>
+    <parent line="2015" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/libertarianism-for-beginners_982/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>18956</dlsize>
+    <checktime>3.491041</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/0b/bc/0bbcd0a6f4bcd81ccb1049a52736406e.jpg</url>
+    <name>Libertarianism for Beginners</name>
+    <parent line="2015" column="85">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/0b/bc/0bbcd0a6f4bcd81ccb1049a52736406e.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>10883</dlsize>
+    <checktime>3.567609</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/its-only-the-himalayas_981/index.html</url>
+    <parent line="2090" column="21">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/its-only-the-himalayas_981/index.html</realurl>
+    <extern>0</extern>
+    <dlsize>19362</dlsize>
+    <checktime>3.933417</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js</url>
+    <parent line="2197" column="13">https://books.toscrape.com/</parent>
+    <realurl>http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js</realurl>
+    <extern>1</extern>
+    <dlsize>33018</dlsize>
+    <checktime>3.270517</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>media/cache/27/a5/27a53d0bb95bdd88288eaf66c9230d7e.jpg</url>
+    <name>It's Only the Himalayas</name>
+    <parent line="2090" column="79">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/media/cache/27/a5/27a53d0bb95bdd88288eaf66c9230d7e.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>11095</dlsize>
+    <checktime>3.989049</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>catalogue/page-2.html</url>
+    <name>next</name>
+    <parent line="2167" column="34">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/catalogue/page-2.html</realurl>
+    <extern>0</extern>
+    <dlsize>50877</dlsize>
+    <checktime>3.754411</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/js/bootstrap3/bootstrap.min.js</url>
+    <parent line="2208" column="5">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/js/bootstrap3/bootstrap.min.js</realurl>
+    <extern>0</extern>
+    <dlsize>31819</dlsize>
+    <checktime>3.063093</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/js/oscar/ui.js</url>
+    <parent line="2210" column="5">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/js/oscar/ui.js</realurl>
+    <extern>0</extern>
+    <dlsize>13966</dlsize>
+    <checktime>3.044343</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/js/bootstrap-datetimepicker/bootstrap-datetimepicker.js</url>
+    <parent line="2212" column="5">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/js/bootstrap-datetimepicker/bootstrap-datetimepicker.js</realurl>
+    <extern>0</extern>
+    <dlsize>55331</dlsize>
+    <checktime>3.221598</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>static/oscar/js/bootstrap-datetimepicker/locales/bootstrap-datetimepicker.all.js</url>
+    <parent line="2213" column="5">https://books.toscrape.com/</parent>
+    <realurl>https://books.toscrape.com/static/oscar/js/bootstrap-datetimepicker/locales/bootstrap-datetimepicker.all.js</realurl>
+    <extern>0</extern>
+    <dlsize>31995</dlsize>
+    <checktime>3.462641</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+</linkchecker>
+<!-- Stopped checking at 2026-10-04 18:14:30+001 (39 seconds) -->

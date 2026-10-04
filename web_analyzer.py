@@ -3,9 +3,10 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, get_args
-from urllib.parse import urldefrag, urljoin, urlparse
+from urllib.parse import urldefrag, urlparse
 
 import httpx
+import lxml.html
 from bs4 import BeautifulSoup
 
 from google import genai
@@ -22,7 +23,6 @@ client = httpx.Client(
     headers={"User-Agent": "Mozilla/5.0 (compatible; web-analyzer/0.1)"},
 )
 
-LINK_ATTRIBUTES = {"a": "href", "img": "src", "script": "src", "link": "href", "iframe": "src"}
 IGNORED_LINK_RELS = {"preconnect", "dns-prefetch"}
 
 class Assessment(BaseModel):
@@ -74,6 +74,8 @@ class Report(BaseModel):
     unverified_agent_findings: list[AgentFinding] = []
     rejected_submissions: int = 0  # times the agent submitted findings it hadn't checked
     unbacked_claims: int = 0  # total unbacked findings across those submissions
+    links_found: int = 0  # unique links found on the analyzed page(s)
+    links_checked: int = 0  # how many of those were checked; should equal links_found
 
 
 def check_url(url):
@@ -124,33 +126,40 @@ def extract_links(url):
         return {"url": url, "final_url": str(response.url), "error": "not an HTML page", "links": []}
 
     page_url = str(response.url)  # after redirects, so relative links resolve correctly
-    soup = BeautifulSoup(response.text, "html.parser")
-    base = soup.find("base", href=True)
-    base_url = urljoin(page_url, base["href"]) if base else page_url
+    try:
+        doc = lxml.html.fromstring(response.content, base_url=page_url)
+    except Exception as e:
+        return {"url": url, "final_url": page_url, "error": f"could not parse the page: {e}", "links": []}
+    doc.make_links_absolute(handle_failures="ignore")
     page_host = urlparse(page_url).netloc
 
     links = []
     seen = set()
-    for tag in soup.find_all(list(LINK_ATTRIBUTES)):
-        raw = (tag.get(LINK_ATTRIBUTES[tag.name]) or "").strip()
-        if not raw or raw.startswith("#"):
-            continue  # missing attribute or same-page anchor
-        if tag.name == "link" and IGNORED_LINK_RELS & set(tag.get("rel", [])):
+    for element, attribute, link, _ in doc.iterlinks():
+        if element.tag == "link" and IGNORED_LINK_RELS & set((element.get("rel") or "").lower().split()):
             continue
-        link_url, _ = urldefrag(urljoin(base_url, raw))
-        if urlparse(link_url).scheme not in ("http", "https") or link_url in seen:
-            continue  # skips mailto:, tel:, javascript:, data: and duplicates
+        link_url, _ = urldefrag(link.strip())
+        if urlparse(link_url).scheme not in ("http", "https") or link_url in seen or link_url == page_url:
+            continue  # skips mailto:, tel:, javascript:, data:, duplicates and links to this same page
         seen.add(link_url)
+        text = " ".join(element.text_content().split()) if element.tag == "a" and attribute == "href" else ""
         links.append({
             "url": link_url,
-            "text": (tag.get_text(strip=True) or None) if tag.name == "a" else None,
-            "tag": tag.name,
+            "text": text or None,
+            "tag": element.tag,
+            "attribute": attribute,  # None for links inside CSS in a <style> block
             "internal": urlparse(link_url).netloc == page_host,
         })
     return {"url": url, "final_url": page_url, "error": None, "links": links}
 
 def check_urls(urls):
     return [check_url(url) for url in urls]
+
+def check_page_links(url):
+    page = extract_links(url)
+    for link, result in zip(page["links"], check_urls([link["url"] for link in page["links"]])):
+        link["check"] = result
+    return page
 
 def fetch_page_text(url, max_chars=2000):
     # returns the page's title and a short piece of its visible text
@@ -182,18 +191,23 @@ def fetch_page_text(url, max_chars=2000):
     )
     return result
 
+def without_verdict(result):
+    return {key: value for key, value in result.items() if key != "verdict"}
+
 def hide_verdict(tool_name, tool_result):
     if tool_name == "check_url":
-        return {key: value for key, value in tool_result.items() if key != "verdict"}
+        return without_verdict(tool_result)
     if tool_name == "check_urls":
-        return [{key: value for key, value in result.items() if key != "verdict"} for result in tool_result]
+        return [without_verdict(result) for result in tool_result]
+    if tool_name == "check_page_links":
+        return {**tool_result, "links": [{**link, "check": without_verdict(link["check"])} for link in tool_result["links"]]}
     return tool_result
 
 def process_tool(tool_name, tool_input):
     if tool_name == "check_url":
         return check_url(tool_input["url"])
-    elif tool_name == "extract_links":
-        return extract_links(tool_input["url"])
+    elif tool_name == "check_page_links":
+        return check_page_links(tool_input["url"])
     elif tool_name == "check_urls":
         return check_urls(tool_input["urls"])
     elif tool_name == "fetch_page_text":
@@ -224,6 +238,9 @@ def record_result(tool_name, tool_result, link_info, checks, fetched=None):
     elif tool_name == "check_urls":
         for result in tool_result:
             checks[result["url"]] = result
+    elif tool_name == "check_page_links":
+        record_result("extract_links", tool_result, link_info, checks)
+        record_result("check_urls", [link["check"] for link in tool_result["links"]], link_info, checks)
     elif tool_name == "fetch_page_text" and fetched is not None:
         fetched[tool_result["url"]] = tool_result
 
@@ -307,15 +324,16 @@ def main():
             }
         },
         {
-            "name": "extract_links",
-            "description": "Extracts all links from a given web page, including their text, tag and whether they are "
-                           "internal or external.",
+            "name": "check_page_links",
+            "description": "Finds every link on a web page and checks all of them. Returns each link's text, tag, "
+                           "attribute and whether it is internal or external, with its status code, final URL, "
+                           "redirect chain and any connection error.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "The URL of the web page to extract links from."
+                        "description": "The URL of the web page whose links to check."
                     }
                 },
                 "required": ["url"]
@@ -403,7 +421,8 @@ def main():
         You are a web link analyzer. Your goal is to find every link problem on the page the user gives you,
         including problems that the status code alone does not reveal.
 
-        Start by extracting the links and checking all of them. Then look for anything suspicious and
+        Start by calling check_page_links on the URL: it finds every link on the page and checks all of them.
+        Then look for anything suspicious in the results and
         investigate it with fetch_page_text, for example:
         - an internal link that returns 200 but may be an error page ("not found", "página não encontrada")
         - a redirect that ends on the homepage or on a login page
@@ -424,6 +443,7 @@ def main():
         tool_config=types.ToolConfig(
             function_calling_config=types.FunctionCallingConfig(mode="ANY")
         ),
+        thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_level="LOW"),
     )
 
     user_message = input("\nEnter your message: ")
@@ -457,6 +477,11 @@ def main():
             contents=contents,
             config=config
         )
+        
+        for part in response.candidates[0].content.parts or []:
+            if part.thought and part.text:
+                print(f"\n=====Gemini's thoughts=====\n{part.text}\n")
+        
         llm_requests += 1
         usage = response.usage_metadata
         if usage:
@@ -489,9 +514,10 @@ def main():
                 print(f"=====Report rejected: {len(unbacked)} unbacked finding(s)=====")
                 tool_result = {"error": unbacked_message(unbacked)}
 
-            if tool_name == "extract_links" and target is None:
+            if tool_name == "check_page_links" and target is None:
                 target = tool_input["url"]
             record_result(tool_name, tool_result, link_info, checks, fetched)
+            print(f"=====Result of {tool_name}=====\n{hide_verdict(tool_name, tool_result)}\n")
             response_parts.append(
                 types.Part.from_function_response(name=tool_name, response={"result": hide_verdict(tool_name, tool_result)})
             )
@@ -522,9 +548,10 @@ def main():
         unverified_agent_findings=unverified,
         rejected_submissions=rejected_submissions,
         unbacked_claims=unbacked_claims,
+        links_found=len(link_info),
+        links_checked=sum(1 for url in link_info if url in checks),
     )
     report_json = report.model_dump_json(indent=2)
-    print(report_json)
     Path("reports/report.json").write_text(report_json)
     print("=====Report saved to report.json=====")
 
