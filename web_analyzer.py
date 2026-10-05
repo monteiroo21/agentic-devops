@@ -24,6 +24,7 @@ client = httpx.Client(
 )
 
 IGNORED_LINK_RELS = {"preconnect", "dns-prefetch"}
+MAX_PAGE_BYTES = 512 * 1024  # enough for the title and first heading of almost any page
 
 class Assessment(BaseModel):
     url: str
@@ -32,7 +33,7 @@ class Assessment(BaseModel):
     suggested_fix: str | None = None
 
 AgentRule = Literal["soft-404", "redirect-to-homepage", "redirect-to-login", "text-mismatch", "other"]
-NEEDS_PAGE_TEXT = {"soft-404", "text-mismatch"}
+NEEDS_PAGE_TEXT = {"soft-404", "text-mismatch", "other"}
 
 class AgentFinding(BaseModel):
     url: str
@@ -78,15 +79,35 @@ class Report(BaseModel):
     links_checked: int = 0  # how many of those were checked; should equal links_found
 
 
+def page_soup(html):
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "template"]):
+        tag.decompose()  # not visible to a reader
+    return soup
+
+def title_and_heading(soup):
+    h1 = soup.find("h1")
+    title = (soup.title.get_text(strip=True) or None) if soup.title else None
+    heading = (h1.get_text(" ", strip=True) or None) if h1 else None
+    return title, heading
+
+def read_start(response, limit=MAX_PAGE_BYTES):
+    body = b""
+    for chunk in response.iter_bytes():
+        body += chunk
+        if len(body) >= limit:
+            break
+    return body[:limit].decode(response.encoding or "utf-8", errors="replace")
+
 def check_url(url):
-    result = {"url": url, "status": None, "final_url": None, "redirects": [],
-              "error": None, "time_ms": None, "verdict": None}
+    # one GET per link, like a browser; HTML pages also give their title and first heading
+    result = {"url": url, "status": None, "final_url": None, "redirects": [], "content_type": None,
+              "title": None, "heading": None, "error": None, "time_ms": None, "verdict": None}
     start = time.perf_counter()
     try:
-        response = client.head(url)
-        if response.status_code >= 400:
-            with client.stream("GET", url) as response:
-                pass
+        with client.stream("GET", url) as response:
+            content_type = response.headers.get("content-type", "")
+            html = read_start(response) if "text/html" in content_type else None
     except httpx.TooManyRedirects:
         result.update(error="too many redirects", verdict="broken")
     except httpx.TimeoutException:
@@ -109,8 +130,11 @@ def check_url(url):
             status=response.status_code,
             final_url=str(response.url),
             redirects=[{"url": str(r.url), "status": r.status_code} for r in response.history],
+            content_type=content_type.split(";")[0] or None,
             verdict=verdict,
         )
+        if html is not None:
+            result["title"], result["heading"] = title_and_heading(page_soup(html))
     result["time_ms"] = round((time.perf_counter() - start) * 1000)
     return result
 
@@ -176,16 +200,14 @@ def fetch_page_text(url, max_chars=2000):
     if "text/html" not in content_type:
         return result  # PDFs, images, ...: no text to read
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    for tag in soup(["script", "style", "noscript", "template"]):
-        tag.decompose()  # not visible to a reader
-    h1 = soup.find("h1")
+    soup = page_soup(response.text)
+    title, heading = title_and_heading(soup)
     # Prefer the main content, so menus and footers don't use up the text budget
     root = soup.find("main") or soup.body or soup
     text = " ".join(root.get_text(" ", strip=True).split())
     result.update(
-        title=(soup.title.get_text(strip=True) or None) if soup.title else None,
-        heading=(h1.get_text(" ", strip=True) or None) if h1 else None,
+        title=title,
+        heading=heading,
         text=text[:max_chars],
         truncated=len(text) > max_chars,
     )
@@ -219,15 +241,6 @@ def process_tool(tool_name, tool_input):
             return {"error": f"Invalid report, fix it and call submit_report again: {e}"}
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
-
-def unbacked_message(unbacked):
-    lines = []
-    for f in unbacked:
-        reason = "you never read that page" if f.rule in NEEDS_PAGE_TEXT else "no tool result shows this URL"
-        lines.append(f"- {f.rule} for {f.url}: {reason}")
-    return ("Report not accepted. These findings are not backed by anything you looked at:\n"
-            + "\n".join(lines)
-            + "\nCheck them (use fetch_page_text to read a page) or remove them, then call submit_report again.")
 
 def record_result(tool_name, tool_result, link_info, checks, fetched=None):
     if tool_name == "extract_links":
@@ -273,10 +286,37 @@ def build_findings(checks, link_info, assessments):
         ))
     return findings
 
+def unbacked_message(unbacked, checks, fetched):
+    lines = []
+    for f in unbacked:
+        if f.rule in NEEDS_PAGE_TEXT:
+            reason = "you never read that page or the page it redirects to"
+        elif f.rule == "redirect-to-homepage" and (f.url in checks or f.url in fetched):
+            reason = f"the tools show it ends on {final_url_of(f.url, checks, fetched)}, which is not a redirect to a homepage"
+        else:
+            reason = "no tool result shows this URL"
+        lines.append(f"- {f.rule} for {f.url}: {reason}")
+    return ("Report not accepted. These findings are not backed by what the tools showed you:\n"
+            + "\n".join(lines)
+            + "\nCheck them (use fetch_page_text to read a page), give them the rule that fits, or remove them, "
+              "then call submit_report again.")
+
+def final_url_of(url, checks, fetched):
+    return (checks.get(url) or fetched.get(url) or {}).get("final_url")
+
+def ends_on_homepage(url, checks, fetched):
+    # the link was redirected and ended on the root of a site
+    final_url = final_url_of(url, checks, fetched)
+    return final_url is not None and final_url != url and urlparse(final_url).path in ("", "/")
+
 def is_backed(agent_finding, checks, fetched):
+    url = agent_finding.url
     if agent_finding.rule in NEEDS_PAGE_TEXT:
-        return agent_finding.url in fetched  # it must have read the page
-    return agent_finding.url in fetched or agent_finding.url in checks
+        final_url = checks.get(url, {}).get("final_url")
+        return url in fetched or final_url in fetched
+    if agent_finding.rule == "redirect-to-homepage" and not ends_on_homepage(url, checks, fetched):
+        return False
+    return url in fetched or url in checks
 
 def build_agent_findings(agent_findings, checks, fetched, link_info, findings):
     # Turn the agent's own findings into report findings, but only if a tool result backs them up
@@ -311,7 +351,8 @@ def main():
         {
             "name": "check_url",
             "description": "Checks whether a single URL works and returns its status code, final URL, "
-                            "redirect chain and any connection error.",
+                            "redirect chain, content type and any connection error, and for an HTML page "
+                            "its title and first heading.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -327,7 +368,8 @@ def main():
             "name": "check_page_links",
             "description": "Finds every link on a web page and checks all of them. Returns each link's text, tag, "
                            "attribute and whether it is internal or external, with its status code, final URL, "
-                           "redirect chain and any connection error.",
+                           "redirect chain, content type and any connection error, and for a link to an HTML page "
+                           "that page's title and first heading.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -342,7 +384,8 @@ def main():
         {
             "name": "check_urls",
             "description": "Checks whether multiple URLs work and returns their status code, final URL, "
-                            "redirect chain and any connection error.",
+                            "redirect chain, content type and any connection error, and for HTML pages "
+                            "their title and first heading.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -422,13 +465,19 @@ def main():
         including problems that the status code alone does not reveal.
 
         Start by calling check_page_links on the URL: it finds every link on the page and checks all of them.
-        Then look for anything suspicious in the results and
-        investigate it with fetch_page_text, for example:
-        - an internal link that returns 200 but may be an error page ("not found", "página não encontrada")
-        - a redirect that ends on the homepage or on a login page
-        - a link whose text does not match the page it leads to
-        You don't need to fetch every page; you can fetch several pages at once. Keep the number of tool calls to a minimum necessary,
-        then call submit_report. Put the problems you found that the status code does not show in agent_findings.
+
+        A status of 200 only means the server answered. It does not mean the page shows what the link promises:
+        an error page, an empty page or the wrong page can all return 200. So for every link to a page, internal
+        or external, ask whether its text, its URL and the page it ends up on agree. Look out for:
+        - a page that returns 200 but is an error page, or no longer has what the link promises
+        - a redirect that ends somewhere the link did not promise, such as the homepage, a login page or a general list page
+        - a link whose text does not match its URL or the page it leads to
+        Read every page you cannot confirm from its link text, URL, title and heading alone with fetch_page_text.
+        You can fetch several pages at once.
+
+        Put the problems you found that the status code does not show in agent_findings,
+        using the most specific rule that fits. Before reporting a soft-404, text-mismatch or other
+        finding, read that page with fetch_page_text.
 
         Only report what the tools showed you. You do not check accessibility, so do not comment on it.
     """
@@ -443,7 +492,7 @@ def main():
         tool_config=types.ToolConfig(
             function_calling_config=types.FunctionCallingConfig(mode="ANY")
         ),
-        thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_level="LOW"),
+        thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_level="HIGH"),
     )
 
     user_message = input("\nEnter your message: ")
@@ -512,7 +561,7 @@ def main():
                 rejected_submissions += 1
                 unbacked_claims += len(unbacked)
                 print(f"=====Report rejected: {len(unbacked)} unbacked finding(s)=====")
-                tool_result = {"error": unbacked_message(unbacked)}
+                tool_result = {"error": unbacked_message(unbacked, checks, fetched)}
 
             if tool_name == "check_page_links" and target is None:
                 target = tool_input["url"]

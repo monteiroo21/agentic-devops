@@ -10,7 +10,7 @@
     "A defect counts as found if the report has a finding for its URL whose rule is in 'accepted_rules'.",
     "A decoy is a false positive if the report has an error or warning finding for it. An info-level 'redirect' finding is fine.",
     "Every link on a start page that is not listed here works, so any error or warning finding for one of them is also a false positive.",
-    "'linkchecker_flags' says whether LinkChecker reports the link as invalid when run as: linkchecker --check-extern -r1 <start page>. For a defect, true means the static tool finds it; for a decoy, false means it correctly leaves it alone.",
+    "'linkchecker_flags' says whether LinkChecker reports the link as invalid when run as: linkchecker --check-extern -r1 --timeout 10 <start page> (10 s matches the agent's HTTP client). For a defect, true means the static tool finds it; for a decoy, false means it correctly leaves it alone.",
     "URLs assume the server runs on port 80. On another port, add the port to the host before comparing."
   ],
   "defects": [
@@ -131,9 +131,9 @@
       "tag": "a",
       "kind": "timeout",
       "accepted_rules": ["unreachable"],
-      "linkchecker_flags": false,
+      "linkchecker_flags": true,
       "behavior": "Answers HEAD and GET only after 25 seconds.",
-      "note": "The agent's HTTP client gives up after 10 s. LinkChecker waits up to 60 s by default, so it reports the link as valid unless run with --timeout below 25."
+      "note": "Both tools give up after 10 s. With LinkChecker's default 60 s timeout it would report the link as valid."
     },
     {
       "url": "http://www.veloribeira.pt/tours/geres-weekend",

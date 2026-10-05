@@ -1,18 +1,18 @@
 {
   "target": "http://www.veloribeira.pt/",
   "model": "gemini-3.1-flash-lite",
-  "started_at": "2026-10-05T09:48:10.977888+00:00",
-  "duration_s": 42.0,
-  "llm_requests": 2,
-  "input_tokens": 8285,
-  "output_tokens": 1177,
+  "started_at": "2026-10-05T18:21:13.101477+00:00",
+  "duration_s": 68.0,
+  "llm_requests": 5,
+  "input_tokens": 42593,
+  "output_tokens": 2509,
   "counts": {
-    "ok": 38,
-    "broken": 5,
+    "ok": 37,
+    "broken": 6,
     "redirect": 5,
     "unreachable": 1
   },
-  "narrative": "The website shows multiple link health issues, including broken CSS files, missing product images, and broken blog posts. Several key functional pages, such as online booking and promotional pages, are currently inaccessible due to connection timeouts or redirect loops. Additionally, some links redirect users to unintended pages like the homepage or login screen.",
+  "narrative": "The website has several broken links, including 404s, 500 errors, and timeouts. Additionally, there are several instances of misleading redirects to login pages or the homepage, as well as soft-404 pages where content appears to be missing despite the server returning a 200 status code.",
   "findings": [
     {
       "rule": "broken-resource",
@@ -26,7 +26,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/static/css/print.css",
         "likely_intentional": false,
-        "note": "The CSS file 'print.css' returns a 404 error.",
+        "note": "This CSS file is not found (404).",
         "suggested_fix": null
       },
       "source": "tools",
@@ -73,7 +73,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/booking",
         "likely_intentional": false,
-        "note": "The link for booking causes a connection timeout.",
+        "note": "This booking link timed out.",
         "suggested_fix": null
       },
       "source": "tools",
@@ -92,7 +92,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/promo/end-of-season",
         "likely_intentional": false,
-        "note": "The promo page causes a 'too many redirects' error.",
+        "note": "This link resulted in too many redirects.",
         "suggested_fix": null
       },
       "source": "tools",
@@ -111,7 +111,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/static/img/products/gravel-x2.jpg",
         "likely_intentional": false,
-        "note": "The image for the 'Gravel X2' product returns a 404 error.",
+        "note": "This product image is not found (404).",
         "suggested_fix": null
       },
       "source": "tools",
@@ -130,7 +130,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/tours/geres-weekend",
         "likely_intentional": false,
-        "note": "The tour page for 'Gerês national park' returns a 500 server error.",
+        "note": "This tour page returned a server error (500).",
         "suggested_fix": null
       },
       "source": "tools",
@@ -177,7 +177,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/blog/winter-storage-tips",
         "likely_intentional": false,
-        "note": "The blog post link for winter storage tips returns a 404 error.",
+        "note": "This blog post page is not found (404).",
         "suggested_fix": null
       },
       "source": "tools",
@@ -199,6 +199,39 @@
       "note": null
     },
     {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/gift-cards",
+      "tag": "a",
+      "text": "Gift cards",
+      "status": 500,
+      "error": null,
+      "assessment": {
+        "url": "http://www.veloribeira.pt/gift-cards",
+        "likely_intentional": false,
+        "note": "This gift cards page returned a server error (500).",
+        "suggested_fix": null
+      },
+      "source": "tools",
+      "evidence": null,
+      "note": null
+    },
+    {
+      "rule": "redirect-to-login",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/account/orders",
+      "tag": "a",
+      "text": "My orders",
+      "status": 200,
+      "error": null,
+      "assessment": null,
+      "source": "agent",
+      "evidence": "Redirects to login page.",
+      "note": "This link leads to a login page instead of the user's orders, likely because the user is not logged in. While technically functional as a login page, it is not the destination promised by the link."
+    },
+    {
       "rule": "redirect-to-homepage",
       "severity": "warning",
       "page": "http://www.veloribeira.pt/",
@@ -209,8 +242,36 @@
       "error": null,
       "assessment": null,
       "source": "agent",
-      "evidence": "The link redirects to the homepage.",
-      "note": "This link should ideally point to a specific article or page about service prices, not the homepage."
+      "evidence": "Redirects to homepage.",
+      "note": "This link leads to the homepage, suggesting the news item is no longer available or the link is incorrectly configured."
+    },
+    {
+      "rule": "soft-404",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/products/kids-explorer-20",
+      "tag": "a",
+      "text": "Explorer 20 kids' bike €329",
+      "status": 200,
+      "error": null,
+      "assessment": null,
+      "source": "agent",
+      "evidence": "Page text says \"We couldn't find the product you were looking for.\"",
+      "note": "This page returns 200 but clearly indicates a missing product, making it a soft-404."
+    },
+    {
+      "rule": "text-mismatch",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/help/warranty",
+      "tag": "a",
+      "text": "Returns & refunds",
+      "status": 200,
+      "error": null,
+      "assessment": null,
+      "source": "agent",
+      "evidence": "Link text \"Returns & refunds\" leads to a page titled \"Warranty and repairs\" that only mentions returns at the very end.",
+      "note": "The link text does not accurately describe the main content of the destination page."
     },
     {
       "rule": "redirect-to-login",
@@ -223,27 +284,13 @@
       "error": null,
       "assessment": null,
       "source": "agent",
-      "evidence": "The link redirects to the login page.",
-      "note": "Users looking for a size guide should be able to access it directly, rather than being forced to log in."
-    },
-    {
-      "rule": "other",
-      "severity": "warning",
-      "page": "http://www.veloribeira.pt/",
-      "url": "http://www.veloribeira.pt/tours/aveiro-lagoon",
-      "tag": "a",
-      "text": "Aveiro lagoon and salt pans Full day · 40 km · easy",
-      "status": 200,
-      "error": null,
-      "assessment": null,
-      "source": "agent",
-      "evidence": "The link redirects to the tours index page.",
-      "note": "The specific tour page for 'Aveiro lagoon' appears to be missing or broken, causing it to fall back to the main tours index."
+      "evidence": "Redirects to login page.",
+      "note": "This link attempts to load a PDF download but redirects to a login page, likely because the user is not authorized or logged in to access the document."
     }
   ],
   "unverified_agent_findings": [],
-  "rejected_submissions": 0,
-  "unbacked_claims": 0,
+  "rejected_submissions": 1,
+  "unbacked_claims": 2,
   "links_found": 49,
   "links_checked": 49
 }
