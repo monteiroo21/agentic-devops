@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- created by LinkChecker at 2026-10-05 10:46:47+001 -->
+<!-- Read the documentation at https://linkchecker.github.io/linkchecker/ -->
+<!-- Write comments and bugs to https://github.com/linkchecker/linkchecker/issues -->
+
+<linkchecker created="2026-10-05 10:46:47+001">
+  <urldata>
+    <url>http://www.veloribeira.pt/</url>
+    <realurl>http://www.veloribeira.pt/</realurl>
+    <extern>0</extern>
+    <dltime>0.000329</dltime>
+    <dlsize>6610</dlsize>
+    <checktime>0.118673</checktime>
+    <level>0</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/favicon.png</url>
+    <parent line="8" column="1">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/favicon.png</realurl>
+    <extern>0</extern>
+    <dlsize>99</dlsize>
+    <checktime>0.386576</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/js/main.js</url>
+    <parent line="11" column="1">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/js/main.js</realurl>
+    <extern>0</extern>
+    <dlsize>410</dlsize>
+    <checktime>0.889981</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/rentals/</url>
+    <name>Rentals</name>
+    <parent line="19" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/rentals/</realurl>
+    <extern>0</extern>
+    <dlsize>3197</dlsize>
+    <checktime>0.951809</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/tours</url>
+    <name>Tours</name>
+    <parent line="20" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/tours/</realurl>
+    <extern>0</extern>
+    <dlsize>2971</dlsize>
+    <checktime>1.358332</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/tours/' status: 301 Moved Permanently.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/events</url>
+    <name>Events</name>
+    <parent line="22" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/events</realurl>
+    <extern>0</extern>
+    <dlsize>247</dlsize>
+    <checktime>1.639810</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/tours/</url>
+    <name>Explore our tours</name>
+    <parent line="40" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/tours/</realurl>
+    <extern>0</extern>
+    <dlsize>2971</dlsize>
+    <checktime>1.358332</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/tours/' status: 301 Moved Permanently.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/css/main.css</url>
+    <parent line="9" column="1">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/css/main.css</realurl>
+    <extern>0</extern>
+    <dlsize>4639</dlsize>
+    <checktime>2.028324</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/shop/</url>
+    <name>Shop</name>
+    <parent line="21" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/shop/</realurl>
+    <extern>0</extern>
+    <dlsize>3798</dlsize>
+    <checktime>2.144730</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/blog/</url>
+    <name>Blog</name>
+    <parent line="23" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/blog/</realurl>
+    <extern>0</extern>
+    <dlsize>2652</dlsize>
+    <checktime>2.428067</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/css/print.css</url>
+    <parent line="10" column="1">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/css/print.css</realurl>
+    <extern>0</extern>
+    <dlsize>2264</dlsize>
+    <checktime>2.693539</checktime>
+    <level>1</level>
+    <valid result="404 Not Found">0</valid>
+  </urldata>
+  <urldata>
+    <url>/contact</url>
+    <name>Contact</name>
+    <parent line="24" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/contact</realurl>
+    <extern>0</extern>
+    <dlsize>2481</dlsize>
+    <checktime>3.092494</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/account/orders</url>
+    <name>My orders</name>
+    <parent line="27" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/login?next=%2Faccount%2Forders</realurl>
+    <extern>0</extern>
+    <dlsize>2615</dlsize>
+    <checktime>3.119578</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/login?next=%2Faccount%2Forders' status: 302 Found.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/cart</url>
+    <name>Basket (0)</name>
+    <parent line="28" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/cart</realurl>
+    <extern>0</extern>
+    <dlsize>2218</dlsize>
+    <checktime>2.939915</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/hero-ribeira.png</url>
+    <name>The riverside path at Ribeira, Porto</name>
+    <parent line="34" column="3">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/hero-ribeira.png</realurl>
+    <extern>0</extern>
+    <dlsize>2902</dlsize>
+    <checktime>2.948255</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/products/velo-urban-3</url>
+    <name>Velo Urban 3
+€749</name>
+    <parent line="56" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/products/velo-urban-3</realurl>
+    <extern>0</extern>
+    <dlsize>2868</dlsize>
+    <checktime>2.707260</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/products/velo-urban-3.png</url>
+    <parent line="57" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/products/velo-urban-3.png</realurl>
+    <extern>0</extern>
+    <dlsize>1589</dlsize>
+    <checktime>2.854656</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/products/gravel-x2</url>
+    <name>Gravel X2
+€1,890</name>
+    <parent line="61" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/products/gravel-x2</realurl>
+    <extern>0</extern>
+    <dlsize>2824</dlsize>
+    <checktime>2.869140</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/promo/end-of-season</url>
+    <name>Shop the sale</name>
+    <parent line="46" column="106">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/promo/end-of-season</realurl>
+    <extern>0</extern>
+    <dlsize>148</dlsize>
+    <checktime>3.781427</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/promo/end-of-season/' status: 301 Moved Permanently.</warning>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/promo/end-of-season' status: 301 Moved Permanently.</warning>
+    </warnings>
+    <valid result="TooManyRedirects: Exceeded 10 redirects.">0</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/products/gravel-x2.jpg</url>
+    <parent line="62" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/products/gravel-x2.jpg</realurl>
+    <extern>0</extern>
+    <dlsize>2264</dlsize>
+    <checktime>3.007349</checktime>
+    <level>1</level>
+    <valid result="404 Not Found">0</valid>
+  </urldata>
+  <urldata>
+    <url>/products/trail-5-hardtail</url>
+    <name>Folding City 16
+€899</name>
+    <parent line="66" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/products/trail-5-hardtail</realurl>
+    <extern>0</extern>
+    <dlsize>2833</dlsize>
+    <checktime>2.764197</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/products/folding-city-16.png</url>
+    <parent line="67" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/products/folding-city-16.png</realurl>
+    <extern>0</extern>
+    <dlsize>1588</dlsize>
+    <checktime>2.914809</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/products/kids-explorer-20</url>
+    <name>Explorer 20 kids' bike
+€329</name>
+    <parent line="71" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/products/kids-explorer-20</realurl>
+    <extern>0</extern>
+    <dlsize>2351</dlsize>
+    <checktime>2.710616</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/products/explorer-20-kids.png</url>
+    <parent line="72" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/products/explorer-20-kids.png</realurl>
+    <extern>0</extern>
+    <dlsize>1589</dlsize>
+    <checktime>2.869653</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/products/cargo-duo</url>
+    <name>Cargo Duo e-bike
+€3,450</name>
+    <parent line="76" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/products/cargo-duo</realurl>
+    <extern>0</extern>
+    <dlsize>2406</dlsize>
+    <checktime>2.443935</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/products/cargo-duo.png</url>
+    <parent line="77" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/products/cargo-duo.png</realurl>
+    <extern>0</extern>
+    <dlsize>1588</dlsize>
+    <checktime>2.407915</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/products/commuter-helmet</url>
+    <name>Commuter helmet with MIPS
+€59</name>
+    <parent line="81" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/products/commuter-helmet</realurl>
+    <extern>0</extern>
+    <dlsize>2872</dlsize>
+    <checktime>2.701425</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/products/commuter-helmet.png</url>
+    <parent line="82" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/products/commuter-helmet.png</realurl>
+    <extern>0</extern>
+    <dlsize>1588</dlsize>
+    <checktime>2.898053</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/tours/coastal-ride-vila-do-conde</url>
+    <name>Coastal ride to Vila do Conde
+Full day · 52 km · easy</name>
+    <parent line="93" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/tours/coastal-ride-vila-do-conde</realurl>
+    <extern>0</extern>
+    <dlsize>3063</dlsize>
+    <checktime>3.112843</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/tours/coastal-ride.png</url>
+    <parent line="94" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/tours/coastal-ride.png</realurl>
+    <extern>0</extern>
+    <dlsize>1589</dlsize>
+    <checktime>3.613523</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/tours/geres-weekend</url>
+    <name>Gerês national park weekend
+2 days · 95 km · challenging</name>
+    <parent line="98" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/tours/geres-weekend</realurl>
+    <extern>0</extern>
+    <dlsize>144</dlsize>
+    <checktime>3.456707</checktime>
+    <level>1</level>
+    <valid result="500 Internal Server Error">0</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/tours/geres.png</url>
+    <parent line="99" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/tours/geres.png</realurl>
+    <extern>0</extern>
+    <dlsize>1589</dlsize>
+    <checktime>3.806149</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/tours/aveiro-lagoon</url>
+    <name>Aveiro lagoon and salt pans
+Full day · 40 km · easy</name>
+    <parent line="103" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/tours/</realurl>
+    <extern>0</extern>
+    <dlsize>2971</dlsize>
+    <checktime>3.833861</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/tours/' status: 302 Found.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/static/img/tours/aveiro.png</url>
+    <parent line="104" column="9">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/static/img/tours/aveiro.png</realurl>
+    <extern>0</extern>
+    <dlsize>1590</dlsize>
+    <checktime>3.863575</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>http://www.douroride.pt/passeios/vale-do-douro</url>
+    <name>Douro Valley wine ride</name>
+    <parent line="109" column="56">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.douroride.pt/passeios/vale-do-douro</realurl>
+    <extern>1</extern>
+    <dlsize>1456</dlsize>
+    <checktime>3.824988</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/tours/calendar</url>
+    <name>2026 tour calendar</name>
+    <parent line="110" column="8">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/tours/calendar</realurl>
+    <extern>0</extern>
+    <dlsize>3061</dlsize>
+    <checktime>3.487879</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/news/spring-service-special</url>
+    <name>See this season's service prices</name>
+    <parent line="116" column="118">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/</realurl>
+    <extern>0</extern>
+    <dlsize>6610</dlsize>
+    <checktime>3.688176</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/' status: 301 Moved Permanently.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/blog/douro-valley-3-day-itinerary</url>
+    <name>Riding the Douro Valley: a 3-day itinerary</name>
+    <parent line="127" column="11">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/blog/douro-valley-3-day-itinerary</realurl>
+    <extern>0</extern>
+    <dlsize>5648</dlsize>
+    <checktime>3.448985</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/blog/bike-stolen-what-to-do</url>
+    <name>Bike stolen in Porto? What to do next</name>
+    <parent line="128" column="11">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/blog/bike-stolen-what-to-do</realurl>
+    <extern>0</extern>
+    <dlsize>3868</dlsize>
+    <checktime>3.017628</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/blog/winter-storage-tips</url>
+    <name>Five tips for storing your bike over winter</name>
+    <parent line="129" column="11">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/blog/winter-storage-tips</realurl>
+    <extern>0</extern>
+    <dlsize>2264</dlsize>
+    <checktime>3.159065</checktime>
+    <level>1</level>
+    <valid result="404 Not Found">0</valid>
+  </urldata>
+  <urldata>
+    <url>/help/shipping-and-delivery</url>
+    <name>Shipping &amp; delivery</name>
+    <parent line="144" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/help/shipping-and-delivery</realurl>
+    <extern>0</extern>
+    <dlsize>2652</dlsize>
+    <checktime>3.290527</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/help/warranty</url>
+    <name>Returns &amp; refunds</name>
+    <parent line="145" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/help/warranty</realurl>
+    <extern>0</extern>
+    <dlsize>2812</dlsize>
+    <checktime>3.430549</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/booking</url>
+    <name>Book online</name>
+    <parent line="39" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/booking</realurl>
+    <extern>0</extern>
+    <checktime>12.729205</checktime>
+    <level>1</level>
+    <valid result="ReadTimeout: HTTPConnectionPool(host='www.veloribeira.pt', port=80): Read timed out. (read timeout=10)">0</valid>
+  </urldata>
+  <urldata>
+    <url>/downloads/size-guide.pdf</url>
+    <name>Size guide (PDF)</name>
+    <parent line="146" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/login?next=%2Fdownloads%2Fsize-guide.pdf</realurl>
+    <extern>0</extern>
+    <dlsize>2615</dlsize>
+    <checktime>3.239277</checktime>
+    <level>1</level>
+    <warnings>
+      <warning tag="http-redirected">Redirected to `http://www.veloribeira.pt/login?next=%2Fdownloads%2Fsize-guide.pdf' status: 302 Found.</warning>
+    </warnings>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/downloads/rental-terms.pdf</url>
+    <name>Rental terms (PDF)</name>
+    <parent line="147" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/downloads/rental-terms.pdf</realurl>
+    <extern>0</extern>
+    <dlsize>960</dlsize>
+    <checktime>3.151123</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/about</url>
+    <name>About us</name>
+    <parent line="151" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/about</realurl>
+    <extern>0</extern>
+    <dlsize>2571</dlsize>
+    <checktime>3.124851</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/partners</url>
+    <name>Partners</name>
+    <parent line="152" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/partners</realurl>
+    <extern>0</extern>
+    <dlsize>4103</dlsize>
+    <checktime>2.989593</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/careers</url>
+    <name>Careers</name>
+    <parent line="153" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/careers</realurl>
+    <extern>0</extern>
+    <dlsize>2710</dlsize>
+    <checktime>3.061289</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+  <urldata>
+    <url>/gift-cards</url>
+    <name>Gift cards</name>
+    <parent line="154" column="7">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/gift-cards</realurl>
+    <extern>0</extern>
+    <dlsize>144</dlsize>
+    <checktime>2.978936</checktime>
+    <level>1</level>
+    <valid result="500 Internal Server Error">0</valid>
+  </urldata>
+  <urldata>
+    <url>/privacy</url>
+    <name>Privacy policy</name>
+    <parent line="158" column="36">http://www.veloribeira.pt/</parent>
+    <realurl>http://www.veloribeira.pt/privacy</realurl>
+    <extern>0</extern>
+    <dlsize>2708</dlsize>
+    <checktime>2.968523</checktime>
+    <level>1</level>
+    <valid result="200 OK">1</valid>
+  </urldata>
+</linkchecker>
+<!-- Stopped checking at 2026-10-05 10:47:04+001 (17 seconds) -->

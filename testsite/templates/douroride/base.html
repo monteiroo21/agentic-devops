@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<style>
+  body { margin: 0; font-family: Georgia, "Times New Roman", serif; color: #2b2118; background: #faf6ef; line-height: 1.6; }
+  header, main, footer { max-width: 860px; margin: 0 auto; padding: 1rem 1.25rem; }
+  header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; border-bottom: 2px solid #7a1f2b; }
+  .logo { font-size: 1.5rem; color: #7a1f2b; text-decoration: none; font-weight: bold; }
+  nav a { margin-left: 1rem; color: #2b2118; }
+  a { color: #7a1f2b; }
+  .button { display: inline-block; background: #7a1f2b; color: #fff; padding: .6rem 1rem; text-decoration: none; border-radius: 3px; }
+  footer { font-size: .85rem; color: #6b5d50; border-top: 1px solid #e3d9c9; margin-top: 2rem; }
+</style>
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Douro Ride</a>
+  <nav><a href="/">Início</a><a href="/passeios/">Passeios</a></nav>
+</header>
+<main>
+{{content}}
+</main>
+<footer>
+  <p>Douro Ride · Rua dos Camilos 112, 5050-272 Peso da Régua · +351 254 318 220 · reservas@douroride.pt</p>
+</footer>
+</body>
+</html>
