@@ -46,6 +46,12 @@ class SubmitReport(BaseModel):
     assessments: list[Assessment]
     agent_findings: list[AgentFinding] = []
 
+class RejectedClaim(AgentFinding):
+    reason: Literal["not-read", "not-homepage-redirect", "no-tool-result"]
+    times_rejected: int
+    read_afterwards: bool | None  # None when reading the page wasn't what was missing
+    outcome: Literal["kept", "relabelled", "dropped"]
+
 
 class Finding(BaseModel):
     rule: str
@@ -75,6 +81,7 @@ class Report(BaseModel):
     unverified_agent_findings: list[AgentFinding] = []
     rejected_submissions: int = 0  # times the agent submitted findings it hadn't checked
     unbacked_claims: int = 0  # total unbacked findings across those submissions
+    rejected_claims: list[RejectedClaim] = []  # each distinct claim that was sent back, and its outcome
     links_found: int = 0  # unique links found on the analyzed page(s)
     links_checked: int = 0  # how many of those were checked; should equal links_found
 
@@ -286,16 +293,24 @@ def build_findings(checks, link_info, assessments):
         ))
     return findings
 
+def unbacked_reason(agent_finding, checks, fetched):
+    if agent_finding.rule in NEEDS_PAGE_TEXT:
+        return "not-read"
+    if agent_finding.rule == "redirect-to-homepage" and (agent_finding.url in checks or agent_finding.url in fetched):
+        return "not-homepage-redirect"
+    return "no-tool-result"
+
 def unbacked_message(unbacked, checks, fetched):
     lines = []
     for f in unbacked:
-        if f.rule in NEEDS_PAGE_TEXT:
-            reason = "you never read that page or the page it redirects to"
-        elif f.rule == "redirect-to-homepage" and (f.url in checks or f.url in fetched):
-            reason = f"the tools show it ends on {final_url_of(f.url, checks, fetched)}, which is not a redirect to a homepage"
+        reason = unbacked_reason(f, checks, fetched)
+        if reason == "not-read":
+            text = "you never read that page or the page it redirects to"
+        elif reason == "not-homepage-redirect":
+            text = f"the tools show it ends on {final_url_of(f.url, checks, fetched)}, which is not a redirect to a homepage"
         else:
-            reason = "no tool result shows this URL"
-        lines.append(f"- {f.rule} for {f.url}: {reason}")
+            text = "no tool result shows this URL"
+        lines.append(f"- {f.rule} for {f.url}: {text}")
     return ("Report not accepted. These findings are not backed by what the tools showed you:\n"
             + "\n".join(lines)
             + "\nCheck them (use fetch_page_text to read a page), give them the rule that fits, or remove them, "
@@ -345,6 +360,26 @@ def build_agent_findings(agent_findings, checks, fetched, link_info, findings):
             note=agent_finding.note,
         ))
     return verified, unverified
+
+def rejection_outcomes(rejections, final_findings, checks, fetched):
+    final_rules = {}
+    for f in final_findings:
+        final_rules.setdefault(f.url, set()).add(f.rule)
+    rejected = []
+    for (url, rule), entry in rejections.items():
+        if rule in final_rules.get(url, set()):
+            outcome = "kept"
+        elif url in final_rules:
+            outcome = "relabelled"
+        else:
+            outcome = "dropped"
+        read_afterwards = None
+        if entry["reason"] != "not-homepage-redirect":
+            read_afterwards = url in fetched or final_url_of(url, checks, fetched) in fetched
+        rejected.append(RejectedClaim(**entry["claim"].model_dump(), reason=entry["reason"],
+                                      times_rejected=entry["times_rejected"],
+                                      read_afterwards=read_afterwards, outcome=outcome))
+    return rejected
 
 def main():
     tools = [
@@ -470,7 +505,7 @@ def main():
         an error page, an empty page or the wrong page can all return 200. So for every link to a page, internal
         or external, ask whether its text, its URL and the page it ends up on agree. Look out for:
         - a page that returns 200 but is an error page, or no longer has what the link promises
-        - a redirect that ends somewhere the link did not promise, such as the homepage, a login page or a general list page
+        - a redirect that ends somewhere the link did not promise, such as the homepage, a login page
         - a link whose text does not match its URL or the page it leads to
         Read every page you cannot confirm from its link text, URL, title and heading alone with fetch_page_text.
         You can fetch several pages at once.
@@ -515,6 +550,7 @@ def main():
     MAX_REJECTIONS = 2
     rejected_submissions = 0
     unbacked_claims = 0
+    rejections = {}
 
     while True:
         if contents[-1].role == "model":
@@ -560,6 +596,10 @@ def main():
                 # Send the report back: the agent must look before it claims
                 rejected_submissions += 1
                 unbacked_claims += len(unbacked)
+                for f in unbacked:
+                    entry = rejections.setdefault((f.url, f.rule), {
+                        "claim": f, "reason": unbacked_reason(f, checks, fetched), "times_rejected": 0})
+                    entry["times_rejected"] += 1
                 print(f"=====Report rejected: {len(unbacked)} unbacked finding(s)=====")
                 tool_result = {"error": unbacked_message(unbacked, checks, fetched)}
 
@@ -597,6 +637,7 @@ def main():
         unverified_agent_findings=unverified,
         rejected_submissions=rejected_submissions,
         unbacked_claims=unbacked_claims,
+        rejected_claims=rejection_outcomes(rejections, submitted.agent_findings, checks, fetched),
         links_found=len(link_info),
         links_checked=sum(1 for url in link_info if url in checks),
     )
