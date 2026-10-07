@@ -14,6 +14,7 @@ class ToolCall:
 class Turn:
     tool_calls: list[ToolCall]
     thoughts: str | None
+    text: str | None
     input_tokens: int
     output_tokens: int
     truncated: bool = False
@@ -47,10 +48,12 @@ class GeminiChat:
         self.contents.append(content)
 
         thoughts = [part.text for part in content.parts or [] if part.thought and part.text]
+        text = [part.text for part in content.parts or [] if not part.thought and part.text]
         usage = response.usage_metadata or types.GenerateContentResponseUsageMetadata()
         return Turn(
             tool_calls=[ToolCall(call.name, dict(call.args or {})) for call in response.function_calls or []],
             thoughts="\n".join(thoughts) or None,
+            text="\n".join(text) or None,
             input_tokens=usage.prompt_token_count or 0,
             output_tokens=(usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0),
             truncated=response.candidates[0].finish_reason == types.FinishReason.MAX_TOKENS,
@@ -88,6 +91,7 @@ class OllamaChat:
         return Turn(
             tool_calls=[ToolCall(call.function.name, dict(call.function.arguments)) for call in message.tool_calls or []],
             thoughts=message.thinking or None,
+            text=message.content or None,
             input_tokens=response.prompt_eval_count or 0,
             output_tokens=response.eval_count or 0,
             truncated=response.done_reason == "length",
@@ -95,4 +99,5 @@ class OllamaChat:
 
     def add_tool_results(self, results):
         for call, result in results:
-            self.messages.append({"role": "tool", "tool_name": call.name, "content": json.dumps(result, default=str)})
+            content = json.dumps(result, separators=(",", ":"), ensure_ascii=False, default=str)
+            self.messages.append({"role": "tool", "tool_name": call.name, "content": content})

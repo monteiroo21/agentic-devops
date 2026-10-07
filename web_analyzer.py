@@ -80,6 +80,7 @@ class Report(BaseModel):
     rejected_submissions: int = 0  # times the agent submitted findings it hadn't checked
     unbacked_claims: int = 0  # total unbacked findings across those submissions
     rejected_claims: list[RejectedClaim] = []  # each distinct claim that was sent back, and its outcome
+    text_replies: int = 0  # times the model wrote text instead of calling a tool; always 0 for Gemini, which must call one
     links_found: int = 0  # unique links found on the analyzed page(s)
     links_checked: int = 0  # how many of those were checked; should equal links_found
 
@@ -218,16 +219,27 @@ def fetch_page_text(url, max_chars=2000):
     )
     return result
 
-def without_verdict(result):
-    return {key: value for key, value in result.items() if key != "verdict"}
+HIDDEN_FIELDS = {"verdict", "time_ms"}  # the model must judge each link itself, and timings don't help it
 
-def hide_verdict(tool_name, tool_result):
+def compact(result, leave_out=()):
+    kept = {key: value for key, value in result.items()
+            if key not in HIDDEN_FIELDS and key not in leave_out and value is not None and value != []}
+    if kept.get("final_url") == result.get("url"):
+        kept.pop("final_url", None)
+    return kept
+
+def for_model(tool_name, tool_result):
     if tool_name == "check_url":
-        return without_verdict(tool_result)
+        return compact(tool_result)
     if tool_name == "check_urls":
-        return [without_verdict(result) for result in tool_result]
+        return [compact(result) for result in tool_result]
     if tool_name == "check_page_links":
-        return {**tool_result, "links": [{**link, "check": without_verdict(link["check"])} for link in tool_result["links"]]}
+        # each link and its check as one object, since the check repeats the link's URL
+        links = [{**compact(link, leave_out=("attribute", "check")), **compact(link["check"], leave_out=("url",))}
+                 for link in tool_result["links"]]
+        return {**compact(tool_result, leave_out=("links",)), "links": links}
+    if tool_name == "fetch_page_text":
+        return compact(tool_result, leave_out=() if tool_result["truncated"] else ("truncated",))
     return tool_result
 
 def process_tool(tool_name, tool_input):
@@ -406,7 +418,8 @@ def main():
             "name": "check_url",
             "description": "Checks whether a single URL works and returns its status code, final URL, "
                             "redirect chain, content type and any connection error, and for an HTML page "
-                            "its title and first heading.",
+                            "its title and first heading. Empty fields are left out, and the final URL is "
+                            "only given when it differs from the URL.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -420,10 +433,11 @@ def main():
         },
         {
             "name": "check_page_links",
-            "description": "Finds every link on a web page and checks all of them. Returns each link's text, tag, "
-                           "attribute and whether it is internal or external, with its status code, final URL, "
+            "description": "Finds every link on a web page and checks all of them. Returns each link's text, tag "
+                           "and whether it is internal or external, with its status code, final URL, "
                            "redirect chain, content type and any connection error, and for a link to an HTML page "
-                           "that page's title and first heading.",
+                           "that page's title and first heading. Empty fields are left out, and the final URL is "
+                           "only given when it differs from the link's URL.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -439,7 +453,8 @@ def main():
             "name": "check_urls",
             "description": "Checks whether multiple URLs work and returns their status code, final URL, "
                             "redirect chain, content type and any connection error, and for HTML pages "
-                            "their title and first heading.",
+                            "their title and first heading. Empty fields are left out, and the final URL is "
+                            "only given when it differs from the URL.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -456,7 +471,8 @@ def main():
         },
         {
             "name": "fetch_page_text",
-            "description": "Fetches the title, first heading and a short snippet of visible text from a web page.",
+            "description": "Fetches the title, first heading and a short snippet of visible text from a web page. "
+                           "Empty fields are left out, and the final URL is only given when the page redirected.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -565,11 +581,16 @@ def main():
     unbacked_claims = 0
     rejections = {}
 
+    MAX_TEXT_REPLIES = 2
+    text_replies = 0
+
     while True:
         turn = chat.generate()
 
         if turn.thoughts:
             print(f"\n====={chat.model}'s thoughts=====\n{turn.thoughts}\n")
+        if turn.text:
+            print(f"\n====={chat.model} says=====\n{turn.text}\n")
 
         llm_requests += 1
         input_tokens += turn.input_tokens
@@ -579,8 +600,16 @@ def main():
             print(f"====={chat.model} was cut off at the output token limit=====")
 
         if not turn.tool_calls:
-            print(f"====={chat.model} has no more function calls=====")
-            break
+            if text_replies >= MAX_TEXT_REPLIES:
+                print(f"====={chat.model} has no more function calls=====")
+                break
+            # Local models can't be forced to call a tool, and small ones sometimes write the report as text
+            text_replies += 1
+            print(f"=====No tool call, asking {chat.model} to call a tool=====")
+            chat.add_user_message("You replied with text, but only tool calls are acted on. If you have finished, "
+                                  "hand in your report by calling the submit_report tool; otherwise call the tool "
+                                  "you need next. Do not write the report as text.")
+            continue
 
         # Answer every tool call in this response, not just the last one
         results = []
@@ -609,8 +638,9 @@ def main():
             if tool_name == "check_page_links" and target is None:
                 target = tool_input["url"]
             record_result(tool_name, tool_result, link_info, checks, fetched)
-            print(f"=====Result of {tool_name}=====\n{hide_verdict(tool_name, tool_result)}\n")
-            results.append((call, hide_verdict(tool_name, tool_result)))
+            model_result = for_model(tool_name, tool_result)
+            print(f"=====Result of {tool_name}=====\n{model_result}\n")
+            results.append((call, model_result))
 
         if submitted is not None:
             print(f"====={chat.model} has submitted the final report=====")
@@ -640,6 +670,7 @@ def main():
         rejected_submissions=rejected_submissions,
         unbacked_claims=unbacked_claims,
         rejected_claims=rejection_outcomes(rejections, submitted.agent_findings, checks, fetched),
+        text_replies=text_replies,
         links_found=len(link_info),
         links_checked=sum(1 for url in link_info if url in checks),
     )

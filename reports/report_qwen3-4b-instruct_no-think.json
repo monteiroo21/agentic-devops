@@ -2,18 +2,18 @@
   "target": "http://www.veloribeira.pt/",
   "model": "qwen3:4b-instruct",
   "thinking": false,
-  "started_at": "2026-10-06T21:10:48.701041+00:00",
-  "duration_s": 1035.3,
-  "llm_requests": 6,
-  "input_tokens": 46165,
-  "output_tokens": 679,
+  "started_at": "2026-10-07T09:48:32.413422+00:00",
+  "duration_s": 1088.7,
+  "llm_requests": 7,
+  "input_tokens": 30905,
+  "output_tokens": 1941,
   "counts": {
     "ok": 37,
     "broken": 6,
     "redirect": 5,
     "unreachable": 1
   },
-  "narrative": "The page contains several link issues that the status code alone does not reveal. Some links lead to pages that are not what they promise, such as the blog post on winter storage tips which is missing and redirects to a 404 page. Others redirect to unexpected pages, like the news page on spring service prices which redirects to the homepage. A few links, like the size guide PDF, redirect to a login page instead of the requested document.",
+  "narrative": "The homepage of Velo Ribeira contains several links that either lead to error pages, redirects to login pages, or point to non-existent content, indicating issues with page availability or content integrity.",
   "findings": [
     {
       "rule": "broken-resource",
@@ -80,7 +80,12 @@
       "text": "Shop the sale",
       "status": null,
       "error": "too many redirects",
-      "assessment": null,
+      "assessment": {
+        "url": "http://www.veloribeira.pt/promo/end-of-season",
+        "likely_intentional": true,
+        "note": "The link to 'Shop the sale' redirects to a page that returns a 500 error, suggesting a server-side issue that may be intentional or due to a temporary configuration error.",
+        "suggested_fix": null
+      },
       "source": "tools",
       "evidence": null,
       "note": null
@@ -108,7 +113,12 @@
       "text": "Gerês national park weekend 2 days · 95 km · challenging",
       "status": 500,
       "error": null,
-      "assessment": null,
+      "assessment": {
+        "url": "http://www.veloribeira.pt/tours/geres-weekend",
+        "likely_intentional": false,
+        "note": "The link to 'Gerês national park weekend' returns a 500 error, which is inconsistent with the expectation that a tour page should be accessible.",
+        "suggested_fix": null
+      },
       "source": "tools",
       "evidence": null,
       "note": null
@@ -136,12 +146,7 @@
       "text": "See this season's service prices",
       "status": 200,
       "error": null,
-      "assessment": {
-        "url": "http://www.veloribeira.pt/news/spring-service-special",
-        "likely_intentional": false,
-        "note": "The link to the spring service prices news article redirects to the homepage instead of the intended page, which is inconsistent with the link text and purpose.",
-        "suggested_fix": null
-      },
+      "assessment": null,
       "source": "tools",
       "evidence": null,
       "note": null
@@ -158,7 +163,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/blog/winter-storage-tips",
         "likely_intentional": false,
-        "note": "The link to the winter storage tips blog post returns a 404 page with a 'Page not found' message, indicating the page does not exist or has moved.",
+        "note": "The link to 'Bike stolen in Porto? What to do next' leads to a 404 page, which contradicts the expectation that a blog post about this topic should be available.",
         "suggested_fix": null
       },
       "source": "tools",
@@ -177,7 +182,7 @@
       "assessment": {
         "url": "http://www.veloribeira.pt/downloads/size-guide.pdf",
         "likely_intentional": false,
-        "note": "The link to the size guide PDF redirects to a login page instead of the PDF, suggesting the file is protected and requires authentication.",
+        "note": "The link to 'Size guide (PDF)' redirects to a login page, implying that the download is protected and not publicly accessible, which contradicts the public nature of the resource.",
         "suggested_fix": null
       },
       "source": "tools",
@@ -193,24 +198,15 @@
       "text": "Gift cards",
       "status": 500,
       "error": null,
-      "assessment": null,
+      "assessment": {
+        "url": "http://www.veloribeira.pt/gift-cards",
+        "likely_intentional": true,
+        "note": "The links to 'Gift cards' and 'Rental terms (PDF)' result in 500 errors, indicating server-side issues. The 'Rental terms (PDF)' link works but redirects to a login page, suggesting access control is implemented.",
+        "suggested_fix": null
+      },
       "source": "tools",
       "evidence": null,
       "note": null
-    },
-    {
-      "rule": "redirect-to-homepage",
-      "severity": "warning",
-      "page": "http://www.veloribeira.pt/",
-      "url": "http://www.veloribeira.pt/news/spring-service-special",
-      "tag": "a",
-      "text": "See this season's service prices",
-      "status": 200,
-      "error": null,
-      "assessment": null,
-      "source": "agent",
-      "evidence": "The final URL is the homepage instead of the intended news page.",
-      "note": "The news page on spring service prices redirects to the homepage, contradicting the link's promise."
     },
     {
       "rule": "redirect-to-login",
@@ -223,14 +219,43 @@
       "error": null,
       "assessment": null,
       "source": "agent",
-      "evidence": "The final URL is a login page instead of the PDF document.",
-      "note": "The size guide PDF link redirects to a login page, implying the file is protected and requires authentication."
+      "evidence": "The link redirects to a login page with the text 'Sign in to see your orders, rentals and saved addresses.'",
+      "note": "The resource is intended to be publicly downloadable but redirects to a login page, suggesting access restrictions that contradict public availability."
+    },
+    {
+      "rule": "redirect-to-homepage",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/news/spring-service-special",
+      "tag": "a",
+      "text": "See this season's service prices",
+      "status": 200,
+      "error": null,
+      "assessment": null,
+      "source": "agent",
+      "evidence": "The link redirects to the homepage with the title 'Velo Ribeira | Bike rentals, tours and shop in Porto'",
+      "note": "The link to a news page about service prices redirects to the homepage, suggesting the content is either missing or not properly configured."
+    },
+    {
+      "rule": "redirect-to-login",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/account/orders",
+      "tag": "a",
+      "text": "My orders",
+      "status": 200,
+      "error": null,
+      "assessment": null,
+      "source": "agent",
+      "evidence": "The link redirects to a login page with the text 'Sign in | Velo Ribeira'",
+      "note": "The link to 'My orders' redirects to a login page, indicating that user account access is required to view order history, which may not be intended for public visibility."
     }
   ],
   "unverified_agent_findings": [],
   "rejected_submissions": 0,
   "unbacked_claims": 0,
   "rejected_claims": [],
+  "text_replies": 1,
   "links_found": 49,
   "links_checked": 49
 }
