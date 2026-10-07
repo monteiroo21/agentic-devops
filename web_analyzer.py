@@ -1,19 +1,16 @@
+import argparse
 import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, get_args
 from urllib.parse import urldefrag, urlparse
-
 import httpx
 import lxml.html
 from bs4 import BeautifulSoup
-
-from google import genai
-from google.genai import types
 from pydantic import BaseModel, ValidationError
-
 from dotenv import load_dotenv
+from chat_backends import GeminiChat, OllamaChat
 
 load_dotenv()
 
@@ -70,6 +67,7 @@ class Finding(BaseModel):
 class Report(BaseModel):
     target: str
     model: str
+    thinking: bool = True  # False for local runs with --no-think
     started_at: str
     duration_s: float
     llm_requests: int
@@ -381,7 +379,28 @@ def rejection_outcomes(rejections, final_findings, checks, fetched):
                                       read_afterwards=read_afterwards, outcome=outcome))
     return rejected
 
+DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b"}
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Find link problems on a web page.")
+    parser.add_argument("--backend", choices=DEFAULT_MODELS, default="gemini",
+                        help="gemini (Google's API) or ollama (a local model)")
+    parser.add_argument("--model", help="the model to use; defaults to "
+                        + ", ".join(f"{model} for {backend}" for backend, model in DEFAULT_MODELS.items()))
+    parser.add_argument("--no-think", action="store_true",
+                        help="ollama only: answer without thinking first, which is much faster on a CPU")
+    parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_MAX_OUTPUT_TOKENS,
+                        help="ollama only: the most tokens the model may write per turn, thinking included "
+                             f"(default {DEFAULT_MAX_OUTPUT_TOKENS})")
+    args = parser.parse_args()
+    if args.backend == "gemini" and (args.no_think or args.max_output_tokens != DEFAULT_MAX_OUTPUT_TOKENS):
+        parser.error("--no-think and --max-output-tokens only work with --backend ollama")
+    return args
+
 def main():
+    args = parse_args()
+
     tools = [
         {
             "name": "check_url",
@@ -517,22 +536,16 @@ def main():
         Only report what the tools showed you. You do not check accessibility, so do not comment on it.
     """
     
-    client = genai.Client(
-        http_options=types.HttpOptions(retry_options=types.HttpRetryOptions())
-    )
-    MODEL_NAME = "gemini-3.1-flash-lite"
-    config = types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        tools=[types.Tool(function_declarations=tools)],
-        tool_config=types.ToolConfig(
-            function_calling_config=types.FunctionCallingConfig(mode="ANY")
-        ),
-        thinking_config=types.ThinkingConfig(include_thoughts=True, thinking_level="HIGH"),
-    )
+    model = args.model or DEFAULT_MODELS[args.backend]
+    if args.backend == "ollama":
+        chat = OllamaChat(model, system_prompt, tools, think=not args.no_think,
+                          max_output_tokens=args.max_output_tokens)
+    else:
+        chat = GeminiChat(model, system_prompt, tools)
 
     user_message = input("\nEnter your message: ")
-    contents = [types.Content(role="user", parts=[types.Part(text=user_message)])]
-    
+    chat.add_user_message(user_message)
+
     # What the tools found, filled in during the run
     link_info = {}
     checks = {}
@@ -553,38 +566,28 @@ def main():
     rejections = {}
 
     while True:
-        if contents[-1].role == "model":
-            user_message = input("\nEnter your message: ")
-            contents.append(types.Content(role="user", parts=[types.Part(text=user_message)]))
+        turn = chat.generate()
 
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=contents,
-            config=config
-        )
-        
-        for part in response.candidates[0].content.parts or []:
-            if part.thought and part.text:
-                print(f"\n=====Gemini's thoughts=====\n{part.text}\n")
-        
+        if turn.thoughts:
+            print(f"\n====={chat.model}'s thoughts=====\n{turn.thoughts}\n")
+
         llm_requests += 1
-        usage = response.usage_metadata
-        if usage:
-            input_tokens += usage.prompt_token_count or 0
-            output_tokens += (usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
+        input_tokens += turn.input_tokens
+        output_tokens += turn.output_tokens
 
-        contents.append(response.candidates[0].content)
+        if turn.truncated:
+            print(f"====={chat.model} was cut off at the output token limit=====")
 
-        if not response.function_calls:
-            print("=====Gemini has no more function calls=====")
+        if not turn.tool_calls:
+            print(f"====={chat.model} has no more function calls=====")
             break
 
         # Answer every tool call in this response, not just the last one
-        response_parts = []
-        for function_call in sorted(response.function_calls, key=lambda call: call.name == "submit_report"):
-            tool_name = function_call.name
-            tool_input = function_call.args
-            print(f"=====Gemini wants to use the {tool_name} tool=====")
+        results = []
+        for call in sorted(turn.tool_calls, key=lambda call: call.name == "submit_report"):
+            tool_name = call.name
+            tool_input = call.args
+            print(f"====={chat.model} wants to use the {tool_name} tool=====")
 
             tool_result = process_tool(tool_name, tool_input)
 
@@ -607,15 +610,13 @@ def main():
                 target = tool_input["url"]
             record_result(tool_name, tool_result, link_info, checks, fetched)
             print(f"=====Result of {tool_name}=====\n{hide_verdict(tool_name, tool_result)}\n")
-            response_parts.append(
-                types.Part.from_function_response(name=tool_name, response={"result": hide_verdict(tool_name, tool_result)})
-            )
+            results.append((call, hide_verdict(tool_name, tool_result)))
 
         if submitted is not None:
-            print("=====Gemini has submitted the final report=====")
+            print(f"====={chat.model} has submitted the final report=====")
             break
 
-        contents.append(types.Content(role="user", parts=response_parts))
+        chat.add_tool_results(results)
 
     if submitted is None:
         print("=====No valid report was submitted=====")
@@ -625,7 +626,8 @@ def main():
     agent_findings, unverified = build_agent_findings(submitted.agent_findings, checks, fetched, link_info, findings)
     report = Report(
         target=target or user_message,
-        model=MODEL_NAME,
+        model=chat.model,
+        thinking=not args.no_think,
         started_at=started_at,
         duration_s=round(time.perf_counter() - start, 1),
         llm_requests=llm_requests,
@@ -642,8 +644,10 @@ def main():
         links_checked=sum(1 for url in link_info if url in checks),
     )
     report_json = report.model_dump_json(indent=2)
-    Path("reports/report.json").write_text(report_json)
-    print("=====Report saved to report.json=====")
+    report_name = chat.model.replace(':', '-').replace('/', '-') + ("_no-think" if args.no_think else "")
+    report_path = Path("reports") / f"report_{report_name}.json"
+    report_path.write_text(report_json)
+    print(f"=====Report saved to {report_path}=====")
 
 
 if __name__ == "__main__":
