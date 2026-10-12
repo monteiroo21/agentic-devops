@@ -391,7 +391,7 @@ def rejection_outcomes(rejections, final_findings, checks, fetched):
                                       read_afterwards=read_afterwards, outcome=outcome))
     return rejected
 
-DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b"}
+DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b-instruct"}
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
 def parse_args():

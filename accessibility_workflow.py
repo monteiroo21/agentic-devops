@@ -50,8 +50,9 @@ SYSTEM_PROMPT = """
 
     For every element, give a short reason and then a verdict:
     - pass: it meets the criterion. A few words of reason are enough.
-    - fail: it does not. The reason must say what in the element shows the problem.
-    - unsure: the information you were given is not enough to decide.
+    - fail: the information shows that it does not. The reason must say what in the element shows the problem.
+    - unsure: the information you were given is not enough to decide. If you can't check something, the answer
+      is unsure, never fail.
     Only fail what breaks the criterion, not what could merely be better. Answer for every id you are given,
     and only for those.
 """
@@ -62,16 +63,20 @@ Only suggest specific colours if you know their contrast ratio meets the require
 
 NEEDS_REVIEW = """Criterion: the axe-core rule named in each element. axe-core could not decide these elements.
 Answer pass or fail only if the information here shows which; otherwise answer unsure, for example for a colour
-contrast over an image, which depends on the pixels behind the text."""
+contrast over an image, which depends on the pixels behind the text. Not being able to tell the colours is a
+reason for unsure, not for fail."""
 
 ALT_TEXT = """Criterion: alt-text (WCAG 1.1.1). Does each image's alt text say what the image adds to the page?
 Look out for file names, "image" or "photo", and alt text that repeats the link text. An empty alt is right for
 a decorative image, and for an image inside a link whose text already says where it goes. An image with no alt
 field has no alt attribute at all, which fails."""
 
-LINK_PURPOSE = """Criterion: link-purpose (WCAG 2.4.4). Can a user tell where each link goes from its text,
-together with its context and heading? The text around a link counts as explaining it. Look out for "click here"
-or "read more" with nothing around them to explain. Don't judge whether the destination matches the text."""
+LINK_PURPOSE = """Criterion: link-purpose (WCAG 2.4.4). Can a user tell where each link goes? Every item is a
+link, and its text is everything inside it, so a link around a card can include a name and a price. Most links
+are clear from their own text alone, like a menu link that names a section or a link that names a topic: those
+pass without any context. Only when the text alone is vague, like "click here" or "read more", do its context and
+heading matter, and then the text around the link counts as explaining it. Judge only whether a user can tell
+where the link goes, not whether the topic is explained there, and not whether the destination matches the text."""
 
 REPEATED_LINKS = """Criterion: link-purpose (WCAG 2.4.4). Each id is a group of links with the same text that
 lead to different places. Fail a group if its links' context and headings don't tell them apart."""
@@ -85,8 +90,10 @@ For each part: does its lang match the language of its text? Names of people and
 lang. An element with no lang field has no lang attribute."""
 
 HEADING = """Criterion: heading (WCAG 1.3.1 and 2.4.6). The headings are listed in page order. Does each heading
-describe the text under it (section_text), and does its level fit where it sits in the outline? A heading may
-have little text under it when its subheadings follow straight away."""
+describe the content under it (section_text), and does its level fit where it sits in the outline? A heading with
+no section_text that is followed by lower-level headings is fine: those subheadings are its content. A heading over
+a list of links passes if it names what the links have in common. Skipped heading levels alone aren't a WCAG
+failure."""
 
 @dataclass
 class Task:

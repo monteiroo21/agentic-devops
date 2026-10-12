@@ -525,23 +525,29 @@ def main():
         run_axe gives you axe-core's results. Its violations are already confirmed: do not judge them again, just
         explain each one and suggest a fix. Its needs_review items are ones axe could not decide. Judge them only
         if the tools show you what you need. If they don't, for example a colour contrast over an image, which
-        depends on the pixels behind the text, say they need manual review instead of guessing.
+        depends on the pixels behind the text, say they need manual review instead of guessing. Not being able
+        to check something is a reason for manual review, never for fail.
 
         axe only checks that things exist, not that they make sense. Use get_page_content to judge:
         - alt-text (1.1.1): does each alt text say what the image adds? Look out for file names, "image" or
           "photo", and alt text that repeats the link text. An empty alt is right for a decorative image, and for
           an image inside a link whose text already says where it goes.
-        - link-purpose (2.4.4): can a user tell where each link goes from its text together with its context and
-          heading? Look out for "click here" or "read more" with nothing around them to explain, and the same text
-          leading to different places.
+        - link-purpose (2.4.4): can a user tell where each link goes? A link's text is everything inside it, so a
+          link around a card can include a name and a price. Most links are clear from their own text alone, like
+          a menu link that names a section or a link that names a topic: those need no context. Only when the text
+          alone is vague, like "click here" or "read more", do its context and heading matter, and then the text
+          around the link counts as explaining it. Judge only whether a user can tell where the link goes, not
+          whether the topic is explained there. Also look out for the same text leading to different places.
         - page-title (2.4.2): does the title say what the page is about?
         - page-language (3.1.1, 3.1.2): does lang match the language of the text, and is every passage in another
           language listed in parts with the right lang? Names of people and places don't need their own lang.
         - heading (1.3.1, 2.4.6): do the headings describe the sections under them, and do their levels show how
-          the page is organised?
+          the page is organised? A heading followed by lower-level headings needs no text of its own under it:
+          those subheadings are its content. A heading over a list of links passes if it names what the links
+          have in common. Skipped heading levels alone aren't a WCAG failure.
 
-        Only report what the tools showed you, and refer to elements by their selector exactly as the tools
-        returned it. You do not check whether links work or whether a link's destination matches its text.
+        Only report what breaks a criterion, not what could merely be better. Only report what the tools showed
+        you, and refer to elements by their selector exactly as the tools returned it. You do not check whether links work or whether a link's destination matches its text.
         When you have finished, hand in your report with submit_report: your comments on violations go in
         assessments, your decisions on needs_review items in reviews, and the problems you found in agent_findings.
     """
