@@ -1,0 +1,934 @@
+{
+  "mode": "workflow",
+  "target": "http://www.veloribeira.pt/",
+  "model": "qwen3:4b-instruct",
+  "thinking": false,
+  "started_at": "2026-10-12T09:24:30.660324+00:00",
+  "duration_s": 759.5,
+  "llm_requests": 12,
+  "input_tokens": 6809,
+  "output_tokens": 5239,
+  "invalid_replies": 0,
+  "truncated_replies": 0,
+  "batch_size": 8,
+  "axe_version": "4.14.0",
+  "counts": {
+    "error": 2,
+    "warning": 7,
+    "needs-review": 11
+  },
+  "criteria": {
+    "axe-needs-review": {
+      "elements": 2,
+      "fail": 2,
+      "omitted_first": 0
+    },
+    "alt-text": {
+      "elements": 10,
+      "pass": 10,
+      "omitted_first": 0
+    },
+    "link-purpose": {
+      "elements": 39,
+      "unsure": 11,
+      "omitted_first": 0,
+      "pass": 26,
+      "fail": 2
+    },
+    "page-title": {
+      "elements": 1,
+      "pass": 1,
+      "omitted_first": 0
+    },
+    "page-language": {
+      "elements": 1,
+      "pass": 1,
+      "omitted_first": 0
+    },
+    "heading": {
+      "elements": 18,
+      "pass": 15,
+      "omitted_first": 0,
+      "fail": 3
+    }
+  },
+  "findings": [
+    {
+      "rule": "color-contrast",
+      "severity": "error",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": "a[href$=\"booking\"]",
+      "source": "axe",
+      "html": "<a class=\"button\" href=\"/booking\">Book online</a>",
+      "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.75 (foreground color: #ffffff, background color: #d4622f, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 'Book online' button has low contrast (3.75:1) between its white text and red background, making it hard to see for people with low vision or color blindness. This affects users who rely on visual cues to identify interactive elements.",
+      "suggested_fix": "Change the background color to a higher-contrast shade, such as #d32f2f (red), or use a darker background like #8d0000. The contrast ratio between #ffffff and #d32f2f is 4.5:1, which meets WCAG 2.2 AA requirements."
+    },
+    {
+      "rule": "link-in-text-block",
+      "severity": "error",
+      "wcag": [
+        "wcag2a",
+        "wcag141"
+      ],
+      "selector": "a[href$=\"privacy\"]",
+      "source": "axe",
+      "html": "<a href=\"/privacy\">Privacy policy</a>",
+      "summary": "Fix any of the following:\n  The link has insufficient color contrast of 1.47:1 with the surrounding text. (Minimum contrast is 3:1, link text: #ffffff, surrounding text: #cfd6d9)\n  The link has no styling (such as underline) to distinguish it from the surrounding text",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 'Privacy policy' link lacks visible distinction from surrounding text—its white color has a poor contrast (1.47:1) with the gray text, and it lacks an underline or other visual indicator, making it hard for users to tell it's a link.",
+      "suggested_fix": "Add an underline or a different font style (e.g., bold) to distinguish the link. For example, use a bold font weight (e.g., 600) or add a subtle underline. Ensure the text color has a contrast ratio of at least 3:1 with the surrounding text; using #ffffff against #cfd6d_ ensures 4.4:1 contrast, which meets the requirement."
+    },
+    {
+      "rule": "color-contrast",
+      "severity": "warning",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": "h1",
+      "source": "axe",
+      "html": "<h1>See Porto by bike</h1>",
+      "summary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node",
+      "verdict": "fail",
+      "evidence": "The element contains an image node, so the background color could not be determined. Since color contrast cannot be evaluated, the criterion is not met.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "color-contrast",
+      "severity": "warning",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": ".hero-text > p:nth-child(2)",
+      "source": "axe",
+      "html": "<p>Rentals, guided tours and a friendly workshop, two minutes from the Ribeira waterfront.</p>",
+      "summary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node",
+      "verdict": "fail",
+      "evidence": "The element contains an image node, so the background color could not be determined. Since color contrast cannot be evaluated, the criterion is not met.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > header > div > a",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'Velo Ribeira' is a location name but lacks surrounding text to explain its purpose.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "#main-nav > a:nth-of-type(1)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'Rentals' is a category but not clear what it links to without surrounding text.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "#main-nav > a:nth-of-type(2)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'Tours' is a category but not clear what it links to without surrounding text.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "#main-nav > a:nth-of-type(3)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'Shop' is a category but not clear what it links to without surrounding text.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "#main-nav > a:nth-of-type(4)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'Events' is a category but not clear what it links to without surrounding text.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "#main-nav > a:nth-of-type(5)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'Blog' is a category but not clear what it links to without surrounding text.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "#main-nav > a:nth-of-type(6)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'Contact' is a category but not clear what it links to without surrounding text.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > header > div > div > a:nth-of-type(1)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "No context provided; 'My orders' is a user-specific link but lacks surrounding text to explain its purpose.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(1)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "The text 'Velo Urban 3 €749' is not a link; it is a product listing with a price. There is no link text here, so it does not meet the criterion as a link. This is a product name, not a link purpose.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(2)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "The text 'Gravel X2 €1,890' is not a link; it is a product listing with a price. There is no link text here, so it does not meet the criterion as a link purpose.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(3)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "unsure",
+      "evidence": "The text 'Folding City 16 €899' is not a link; it is a product listing with a price. There is no link text here, so it does not meet the criterion as a link purpose.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "warning",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > a:nth-of-type(1)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "fail",
+      "evidence": "The link text 'Shipping & delivery' is in the 'Help' section, but the context is missing. No surrounding text explains what shipping & delivery entails. This is insufficient to tell where it goes from the text and context.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "warning",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > a:nth-of-type(2)",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "fail",
+      "evidence": "The link text 'Returns & refunds' is in the 'Help' section, but no surrounding text provides context about what returns & refunds are. No explanation is given in the context or heading.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "heading",
+      "severity": "warning",
+      "wcag": [
+        "wcag131",
+        "wcag246"
+      ],
+      "selector": "body > main > div > section:nth-of-type(2) > h2",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "fail",
+      "evidence": "The heading 'Featured in the shop' has no descriptive section text — it only lists a placeholder. It does not describe the content under it, and no actual content follows. This heading lacks descriptive text and fails to describe the section under it.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "heading",
+      "severity": "warning",
+      "wcag": [
+        "wcag131",
+        "wcag246"
+      ],
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > h3",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "fail",
+      "evidence": "The heading 'Help' introduces a section with links to policies. It is a level 3 heading, but it does not describe the content under it clearly — it is vague and does not reflect the actual content. It fails to describe what is under it.",
+      "note": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "heading",
+      "severity": "warning",
+      "wcag": [
+        "wcag131",
+        "wcag246"
+      ],
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(3) > h3",
+      "source": "model",
+      "html": null,
+      "summary": null,
+      "verdict": "fail",
+      "evidence": "The heading 'Velo Ribeira' is a footer-level heading with no descriptive content under it. It appears at the end and does not describe any section text. It is not a section heading with content under it, and its text does not describe what follows. It fails to describe content under it.",
+      "note": null,
+      "suggested_fix": null
+    }
+  ],
+  "verdicts": [
+    {
+      "criterion": "axe-needs-review",
+      "id": "review-1",
+      "selector": "h1",
+      "verdict": "fail",
+      "reason": "The element contains an image node, so the background color could not be determined. Since color contrast cannot be evaluated, the criterion is not met.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "axe-needs-review",
+      "id": "review-2",
+      "selector": ".hero-text > p:nth-child(2)",
+      "verdict": "fail",
+      "reason": "The element contains an image node, so the background color could not be determined. Since color contrast cannot be evaluated, the criterion is not met.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-1",
+      "selector": "body > main > section > img",
+      "verdict": "pass",
+      "reason": "The alt text describes the image content clearly and adds value to the page.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-2",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(1) > img",
+      "verdict": "pass",
+      "reason": "The image has no alt text, and the link text already describes the product. The image is likely decorative or already covered by link text, so an empty alt is acceptable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-3",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(2) > img",
+      "verdict": "pass",
+      "reason": "The image has no alt text, and the link text already describes the product. The image is likely decorative or already covered by link text, so an empty alt is acceptable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-4",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(3) > img",
+      "verdict": "pass",
+      "reason": "The image has no alt text, and the link text already describes the product. The image is likely decorative or already covered by link text, so an empty alt is acceptable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-5",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(4) > img",
+      "verdict": "pass",
+      "reason": "The image has no alt text, and the link text already describes the product. The image is likely decorative or already covered by link text, so an empty alt is acceptable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-6",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(5) > img",
+      "verdict": "pass",
+      "reason": "The image has no alt text, and the link text already describes the product. The image is likely decorative or already covered by link text, so an empty alt is acceptable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-7",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(6) > img",
+      "verdict": "pass",
+      "reason": "The image has no alt text, and the link text already describes the product. The image is likely decorative or already covered by link text, so an empty alt is acceptable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-8",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(1) > img",
+      "verdict": "pass",
+      "reason": "The image has no alt text, and the link text already describes the tour. The image is likely decorative or already covered by link text, so an empty alt is acceptable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-9",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(2) > img",
+      "verdict": "pass",
+      "reason": "The alt attribute is empty. The image is decorative (as it's part of a link with descriptive text), and an empty alt is appropriate for a decorative image.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "alt-text",
+      "id": "img-10",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(3) > img",
+      "verdict": "pass",
+      "reason": "The alt attribute is empty. The image is decorative (as it's part of a link with descriptive text), and an empty alt is appropriate for a decorative image.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-1",
+      "selector": "body > header > div > a",
+      "verdict": "unsure",
+      "reason": "No context provided; 'Velo Ribeira' is a location name but lacks surrounding text to explain its purpose.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-2",
+      "selector": "#main-nav > a:nth-of-type(1)",
+      "verdict": "unsure",
+      "reason": "No context provided; 'Rentals' is a category but not clear what it links to without surrounding text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-3",
+      "selector": "#main-nav > a:nth-of-type(2)",
+      "verdict": "unsure",
+      "reason": "No context provided; 'Tours' is a category but not clear what it links to without surrounding text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-4",
+      "selector": "#main-nav > a:nth-of-type(3)",
+      "verdict": "unsure",
+      "reason": "No context provided; 'Shop' is a category but not clear what it links to without surrounding text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-5",
+      "selector": "#main-nav > a:nth-of-type(4)",
+      "verdict": "unsure",
+      "reason": "No context provided; 'Events' is a category but not clear what it links to without surrounding text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-6",
+      "selector": "#main-nav > a:nth-of-type(5)",
+      "verdict": "unsure",
+      "reason": "No context provided; 'Blog' is a category but not clear what it links to without surrounding text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-7",
+      "selector": "#main-nav > a:nth-of-type(6)",
+      "verdict": "unsure",
+      "reason": "No context provided; 'Contact' is a category but not clear what it links to without surrounding text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-8",
+      "selector": "body > header > div > div > a:nth-of-type(1)",
+      "verdict": "unsure",
+      "reason": "No context provided; 'My orders' is a user-specific link but lacks surrounding text to explain its purpose.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-9",
+      "selector": "body > header > div > div > a:nth-of-type(2)",
+      "verdict": "pass",
+      "reason": "The text 'Basket (0)' is contextualized within a list of items, and the number suggests it refers to a basket with zero items. The context implies it's a cart or inventory item, which is clear from surrounding content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-10",
+      "selector": "body > main > section > div > p:nth-of-type(2) > a:nth-of-type(1)",
+      "verdict": "pass",
+      "reason": "The link 'Book online' is in the context 'Book online Explore our tours', and the heading 'See Porto by bike' provides context about the content. The action 'Book online' is clearly tied to the overall page topic, and 'Explore our tours' helps explain what is being offered.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-11",
+      "selector": "body > main > section > div > p:nth-of-type(2) > a:nth-of-type(2)",
+      "verdict": "pass",
+      "reason": "The link 'Explore our tours' is in the context 'Book online Explore our tours' and under the heading 'See Porto by bike'. The phrase 'Explore our tours' is clearly explained by the heading and context, indicating it refers to bike tours in Porto.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-12",
+      "selector": "body > main > div > p > a",
+      "verdict": "pass",
+      "reason": "The link 'Shop the sale' is in the context 'End-of-season sale: up to 30% off ex-rental bikes until 31 October. Shop the sale'. The context explicitly explains the sale and what it applies to, making the purpose of the link clear.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-13",
+      "selector": "body > main > div > section:nth-of-type(1) > p > a",
+      "verdict": "pass",
+      "reason": "The link 'See all rental bikes and prices' is in the context describing bike types and pricing, and is under the heading 'Rent a bike'. The context and heading together clearly explain that the link leads to a list of rental options with prices.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-14",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(1)",
+      "verdict": "unsure",
+      "reason": "The text 'Velo Urban 3 €749' is not a link; it is a product listing with a price. There is no link text here, so it does not meet the criterion as a link. This is a product name, not a link purpose.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-15",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(2)",
+      "verdict": "unsure",
+      "reason": "The text 'Gravel X2 €1,890' is not a link; it is a product listing with a price. There is no link text here, so it does not meet the criterion as a link purpose.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-16",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(3)",
+      "verdict": "unsure",
+      "reason": "The text 'Folding City 16 €899' is not a link; it is a product listing with a price. There is no link text here, so it does not meet the criterion as a link purpose.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-17",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(4)",
+      "verdict": "pass",
+      "reason": "The link text 'Explorer 20 kids' bike €329' is clearly descriptive and appears in the context of 'Featured in the shop', which provides sufficient context to understand its purpose.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-18",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(5)",
+      "verdict": "pass",
+      "reason": "The link text 'Cargo Duo e-bike €3,450' is specific and appears in the context of 'Featured in the shop', giving clear context about what it is and where it's featured.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-19",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(6)",
+      "verdict": "pass",
+      "reason": "The link text 'Commuter helmet with MIPS €59' is descriptive and appears in the context of 'Featured in the shop', making its purpose clear from the surrounding text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-20",
+      "selector": "body > main > div > section:nth-of-type(2) > p > a",
+      "verdict": "pass",
+      "reason": "The link text 'Browse the whole shop' is clear and its purpose is evident from the context of 'Featured in the shop', indicating it leads to a broader view of the shop.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-21",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(1)",
+      "verdict": "pass",
+      "reason": "The link text 'Coastal ride to Vila do Conde Full day · 52 km · easy' includes specific details (location, duration, difficulty) and is in the context of 'Guided tours', so the user can understand what the link leads to.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-22",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(2)",
+      "verdict": "pass",
+      "reason": "The link text 'Gerês national park weekend 2 days · 95 km · challenging' includes details about destination, duration, and difficulty, and is in the context of 'Guided tours', making its purpose clear.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-23",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(3)",
+      "verdict": "pass",
+      "reason": "The link text 'Aveiro lagoon and salt pans Full day · 40 km · easy' includes location, duration, and difficulty, and is in the context of 'Guided tours', so the user can understand its destination.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-24",
+      "selector": "body > main > div > section:nth-of-type(3) > p:nth-of-type(1) > a",
+      "verdict": "pass",
+      "reason": "The link text 'Douro Valley wine ride' is vague on its own, but is immediately followed by a detailed context explaining what the ride is: 'Heading inland? Our friends at Douro Ride run a Douro Valley wine ride from Peso da Régua.' This context explains the purpose clearly, satisfying the criterion.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-25",
+      "selector": "body > main > div > section:nth-of-type(3) > p:nth-of-type(2) > a",
+      "verdict": "pass",
+      "reason": "The link text '2026 tour calendar' is clearly tied to the heading 'Guided tours', providing context about what the link leads to.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-26",
+      "selector": "body > main > div > section:nth-of-type(4) > div:nth-of-type(1) > p > a",
+      "verdict": "pass",
+      "reason": "The context 'Flat tyre, squeaky brakes or a full service: drop your bike off in the morning and pick it up the same day. See this season's service prices' directly explains the link text, showing what the service prices are for.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-27",
+      "selector": "body > main > div > section:nth-of-type(4) > div:nth-of-type(2) > p > a",
+      "verdict": "pass",
+      "reason": "The context 'Team days, school trips and hotel partnerships. Tell us what you have in mind and we'll put a plan together. Contact us' clearly explains the purpose of the 'Contact us' link in the context of group activities.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-28",
+      "selector": "body > main > div > section:nth-of-type(5) > ul > li:nth-of-type(1) > a",
+      "verdict": "pass",
+      "reason": "The context 'Riding the Douro Valley: a 3-day itinerary 12 September 2026' includes the full link text and a date, making it clear what the link is about.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-29",
+      "selector": "body > main > div > section:nth-of-type(5) > ul > li:nth-of-type(2) > a",
+      "verdict": "pass",
+      "reason": "The context 'Bike stolen in Porto? What to do next 28 August 2026' includes the full link text and a date, clearly explaining the topic.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-30",
+      "selector": "body > main > div > section:nth-of-type(5) > ul > li:nth-of-type(3) > a",
+      "verdict": "pass",
+      "reason": "The context 'Five tips for storing your bike over winter 3 November 2025' includes the full link text and a date, making the purpose clear.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-31",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > a:nth-of-type(1)",
+      "verdict": "fail",
+      "reason": "The link text 'Shipping & delivery' is in the 'Help' section, but the context is missing. No surrounding text explains what shipping & delivery entails. This is insufficient to tell where it goes from the text and context.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-32",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > a:nth-of-type(2)",
+      "verdict": "fail",
+      "reason": "The link text 'Returns & refunds' is in the 'Help' section, but no surrounding text provides context about what returns & refunds are. No explanation is given in the context or heading.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-33",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > a:nth-of-type(3)",
+      "verdict": "pass",
+      "reason": "The text 'Size guide (PDF)' is clear and contextualized within the 'Help' heading, indicating it relates to assistance resources.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-34",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > a:nth-of-type(4)",
+      "verdict": "pass",
+      "reason": "The text 'Rental terms (PDF)' is clear and contextualized within the 'Help' heading, indicating it relates to help content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-35",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(3) > a:nth-of-type(1)",
+      "verdict": "pass",
+      "reason": "The text 'About us' fits naturally within the 'Velo Ribeira' heading, which is a page about the business, making the purpose clear.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-36",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(3) > a:nth-of-type(2)",
+      "verdict": "pass",
+      "reason": "The text 'Partners' fits within the 'Velo Ribeira' heading, suggesting it relates to business partnerships, which is reasonably clear in context.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-37",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(3) > a:nth-of-type(3)",
+      "verdict": "pass",
+      "reason": "The text 'Careers' fits within the 'Velo Ribeira' heading, indicating a section about employment, which is clear in context.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-38",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(3) > a:nth-of-type(4)",
+      "verdict": "pass",
+      "reason": "The text 'Gift cards' fits within the 'Velo Ribeira' heading, indicating a product or service offering, which is reasonably clear in context.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "link-purpose",
+      "id": "link-39",
+      "selector": "body > footer > div:nth-of-type(2) > p > a",
+      "verdict": "pass",
+      "reason": "The text 'Privacy policy' is directly followed by '© 2026 Velo Ribeira, Lda. · Privacy policy', which confirms its purpose and context, making it unambiguous.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "page-title",
+      "id": "title",
+      "selector": null,
+      "verdict": "pass",
+      "reason": "The page title 'Velo Ribeira | Bike rentals, tours and shop in Porto' clearly indicates the main topic—bike rentals, tours, and a shop—located in Porto. This matches the first headings and the start of the text, which also emphasize bike rentals, guided tours, and the shop. The title effectively conveys what the page is about.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "page-language",
+      "id": "lang",
+      "selector": null,
+      "verdict": "pass",
+      "reason": "The page's lang attribute is 'en', and all text content is in English. No passages in other languages are present. Names of people and places (e.g., Porto, Ribeira, Vila do Conde, Douro Valley) are correctly without lang attributes, as they are proper names and do not require a lang attribute. The text is entirely in English, matching the lang attribute.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-1",
+      "selector": "body > main > section > div > h1",
+      "verdict": "pass",
+      "reason": "The heading 'See Porto by bike' introduces the section, and the section text describes rental options and tours, which is consistent with the heading. It is a level 1 heading and fits as a main section title.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-2",
+      "selector": "body > main > div > section:nth-of-type(1) > h2",
+      "verdict": "pass",
+      "reason": "The heading 'Rent a bike' directly matches the section text describing bike rentals, prices, and equipment. It is a level 2 heading, correctly placed under the level 1 heading 'See Porto by bike'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-3",
+      "selector": "body > main > div > section:nth-of-type(2) > h2",
+      "verdict": "fail",
+      "reason": "The heading 'Featured in the shop' has no descriptive section text — it only lists a placeholder. It does not describe the content under it, and no actual content follows. This heading lacks descriptive text and fails to describe the section under it.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-4",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(1) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Velo Urban 3' is a product name with price, and the section text is just '€749'. This heading describes the product, and the text under it is minimal but relevant. It is a level 3 heading, which fits within a subsection of rentals. It is descriptive and appropriate.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-5",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(2) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Gravel X2' describes a product, and the section text is '€1,890'. The heading is descriptive and matches the content. Level 3 is appropriate for product listings under a rental category.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-6",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(3) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Folding City 16' is descriptive, and the section text is '€899'. The content is minimal but directly relevant. Level 3 is appropriate for product listings.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-7",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(4) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Explorer 20 kids' bike' describes a product, and the section text is '€329'. It is specific and matches content. Level 3 is appropriate.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-8",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(5) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Cargo Duo e-bike' describes a product, and the section text is '€3,450'. It is descriptive and relevant. Level 3 is appropriate.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-9",
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(6) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Commuter helmet with MIPS' describes a product, and the section text is '€59'. It is specific and matches content. Level 3 is appropriate for a product listing.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-10",
+      "selector": "body > main > div > section:nth-of-type(3) > h2",
+      "verdict": "pass",
+      "reason": "The heading 'Guided tours' introduces a section that includes tour descriptions. It is a level 2 heading, correctly placed under the main heading 'See Porto by bike'. It accurately describes the content under it.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-11",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(1) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Coastal ride to Vila do Conde' describes a tour, and the section text includes route details. It is a level 3 heading, appropriate for a tour item under 'Guided tours'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-12",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(2) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Gerês national park weekend' describes a tour, and the section text includes route and difficulty. It is a level 3 heading, appropriate under 'Guided tours'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-13",
+      "selector": "body > main > div > section:nth-of-type(3) > div > a:nth-of-type(3) > h3",
+      "verdict": "pass",
+      "reason": "The heading 'Aveiro lagoon and salt pans' describes a tour, and the section text includes route and difficulty, plus a link to a related tour. It is a level 3 heading, appropriate under 'Guided tours'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-14",
+      "selector": "body > main > div > section:nth-of-type(4) > div:nth-of-type(1) > h2",
+      "verdict": "pass",
+      "reason": "The heading 'Workshop' introduces a service, and the section text describes what is offered. It is a level 2 heading, correctly placed under the main section. It accurately describes the content under it.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-15",
+      "selector": "body > main > div > section:nth-of-type(4) > div:nth-of-type(2) > h2",
+      "verdict": "pass",
+      "reason": "The heading 'Groups and companies' introduces a service for teams and partnerships, and the section text describes the offer. It is a level 2 heading, correctly placed under the main section. It accurately describes the content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-16",
+      "selector": "body > main > div > section:nth-of-type(5) > h2",
+      "verdict": "pass",
+      "reason": "The heading 'From the blog' introduces a section of blog posts, and the section text lists posts with dates. It is a level 2 heading, appropriately placed under the main section. It describes the content under it.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-17",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(2) > h3",
+      "verdict": "fail",
+      "reason": "The heading 'Help' introduces a section with links to policies. It is a level 3 heading, but it does not describe the content under it clearly — it is vague and does not reflect the actual content. It fails to describe what is under it.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "heading",
+      "id": "h-18",
+      "selector": "body > footer > div:nth-of-type(1) > div:nth-of-type(3) > h3",
+      "verdict": "fail",
+      "reason": "The heading 'Velo Ribeira' is a footer-level heading with no descriptive content under it. It appears at the end and does not describe any section text. It is not a section heading with content under it, and its text does not describe what follows. It fails to describe content under it.",
+      "omitted_first": false
+    }
+  ]
+}

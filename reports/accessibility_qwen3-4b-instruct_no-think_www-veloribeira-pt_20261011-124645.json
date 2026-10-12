@@ -1,0 +1,132 @@
+{
+  "target": "http://www.veloribeira.pt/",
+  "model": "qwen3:4b-instruct",
+  "thinking": false,
+  "started_at": "2026-10-11T11:14:18.048198+00:00",
+  "duration_s": 1947.7,
+  "llm_requests": 3,
+  "input_tokens": 16159,
+  "output_tokens": 2575,
+  "axe_version": "4.14.0",
+  "counts": {
+    "error": 2,
+    "needs-review": 2,
+    "warning": 3
+  },
+  "narrative": "The page has several accessibility issues including insufficient color contrast for key links and missing alt text for images. Some elements have vague link text that doesn't clearly indicate their purpose. The page title is descriptive but could be more specific. A few elements have background colors that cannot be determined due to image nodes, requiring manual review.",
+  "findings": [
+    {
+      "rule": "color-contrast",
+      "severity": "error",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": "a[href$=\"booking\"]",
+      "source": "axe",
+      "html": "<a class=\"button\" href=\"/booking\">Book online</a>",
+      "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.75 (foreground color: #ffffff, background color: #d4622f, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 'Book online' link has insufficient color contrast of 3.75:1 (4.5:1 required) with a background of #d4622f and white text. This makes it difficult for users with low vision to see.",
+      "suggested_fix": "Increase the contrast by changing the background color to a lighter shade or increasing the font size. A background of #f5f5f5 with white text would achieve a 4.5:1 ratio."
+    },
+    {
+      "rule": "link-in-text-block",
+      "severity": "error",
+      "wcag": [
+        "wcag2a",
+        "wcag141"
+      ],
+      "selector": "a[href$=\"privacy\"]",
+      "source": "axe",
+      "html": "<a href=\"/privacy\">Privacy policy</a>",
+      "summary": "Fix any of the following:\n  The link has insufficient color contrast of 1.47:1 with the surrounding text. (Minimum contrast is 3:1, link text: #ffffff, surrounding text: #cfd6d9)\n  The link has no styling (such as underline) to distinguish it from the surrounding text",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 'Privacy policy' link has insufficient color contrast of 1.47:1 and lacks visible styling (like underline) to distinguish it from surrounding text. This makes it hard for users with low vision to identify.",
+      "suggested_fix": "Improve the contrast ratio and add visible styling (like an underline or different font weight) to make the link stand out from the surrounding text."
+    },
+    {
+      "rule": "color-contrast",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": "h1",
+      "source": "axe",
+      "html": "<h1>See Porto by bike</h1>",
+      "summary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node",
+      "verdict": "manual-review",
+      "evidence": "The background color of the h1 element and .hero-text > p:nth-child(2) could not be determined because they contain image nodes",
+      "note": "The background color of these elements cannot be determined, making it impossible to assess if they meet WCAG 2.2 AA contrast requirements. This requires manual visual inspection.",
+      "suggested_fix": null
+    },
+    {
+      "rule": "color-contrast",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": ".hero-text > p:nth-child(2)",
+      "source": "axe",
+      "html": "<p>Rentals, guided tours and a friendly workshop, two minutes from the Ribeira waterfront.</p>",
+      "summary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node",
+      "verdict": "manual-review",
+      "evidence": "The background color of the h1 element and .hero-text > p:nth-child(2) could not be determined because they contain image nodes",
+      "note": "The background color of these elements cannot be determined, making it impossible to assess if they meet WCAG 2.2 AA contrast requirements. This requires manual visual inspection.",
+      "suggested_fix": null
+    },
+    {
+      "rule": "alt-text",
+      "severity": "warning",
+      "wcag": [
+        "wcag111"
+      ],
+      "selector": "body > main > div > section:nth-of-type(2) > div > a:nth-of-type(1) > img",
+      "source": "agent",
+      "html": null,
+      "summary": null,
+      "verdict": null,
+      "evidence": "All product and tour images have empty alt text in the page content",
+      "note": "Users who rely on screen readers will not get information about what these images show. This affects users with visual impairments.",
+      "suggested_fix": null
+    },
+    {
+      "rule": "link-purpose",
+      "severity": "warning",
+      "wcag": [
+        "wcag244"
+      ],
+      "selector": "body > main > div > section:nth-of-type(1) > p > a",
+      "source": "agent",
+      "html": null,
+      "summary": null,
+      "verdict": null,
+      "evidence": "Links like 'Shop the sale' and 'See all rental bikes and prices' are vague without context",
+      "note": "Users may not understand where these links lead or what they offer. This affects users with cognitive disabilities and those who rely on screen readers.",
+      "suggested_fix": null
+    },
+    {
+      "rule": "page-title",
+      "severity": "warning",
+      "wcag": [
+        "wcag242"
+      ],
+      "selector": "",
+      "source": "agent",
+      "html": null,
+      "summary": null,
+      "verdict": null,
+      "evidence": "The page title is 'Velo Ribeira | Bike rentals, tours and shop in Porto'",
+      "note": "The title is descriptive but could be more specific about the page content to help users understand the page's purpose.",
+      "suggested_fix": null
+    }
+  ],
+  "unverified": [],
+  "rejected_submissions": 1,
+  "unbacked_claims": 1,
+  "text_replies": 0
+}

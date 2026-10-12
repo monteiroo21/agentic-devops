@@ -32,10 +32,8 @@ class Review(BaseModel):
     note: str
 
 AgentRule = Literal["alt-text", "link-purpose", "page-title", "page-language", "heading"]
-# same tag format as axe's, so the report can group both by success criterion
 WCAG_FOR_RULE = {"alt-text": ["wcag111"], "link-purpose": ["wcag244"], "page-title": ["wcag242"],
                  "page-language": ["wcag311", "wcag312"], "heading": ["wcag131", "wcag246"]}
-# where get_page_content lists the elements each rule is about; page-title is about the whole page
 ELEMENT_LISTS = {"alt-text": ("images", "image"), "link-purpose": ("links", "link"),
                  "heading": ("headings", "heading"), "page-language": ("parts", "part")}
 NEEDS_SELECTOR = {"alt-text", "link-purpose"}
@@ -69,6 +67,7 @@ class Finding(BaseModel):
     suggested_fix: str | None = None
 
 class Report(BaseModel):
+    mode: str = "agent"  # the workflow's reports say "workflow"
     target: str
     model: str
     thinking: bool = True  # False for local runs with --no-think
@@ -130,6 +129,19 @@ PAGE_CONTENT_JS = r"""() => {
                         context: context(el), heading: headingFor(el)});
         }
     }
+    // the start of the text under each heading, up to the next one, to judge whether the heading describes it
+    const sectionText = seen.map(() => "");
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let current = -1;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        while (current + 1 < seen.length
+               && seen[current + 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) current++;
+        const parent = node.parentElement;
+        if (current < 0 || seen[current].contains(node) || sectionText[current].length >= 200
+            || !visible(parent) || parent.closest("script, style, noscript, template")) continue;
+        sectionText[current] = clean(sectionText[current] + " " + node.textContent);
+    }
+    headings.forEach((heading, i) => { heading.section_text = sectionText[i].slice(0, 200) || null; });
     // passages marked with their own language (WCAG 3.1.2); plain text alone can't show whether a passage is marked
     const parts = [...document.body.querySelectorAll("[lang]")].filter(visible).map(el => (
         {selector: selector(el), lang: el.getAttribute("lang"), text: clean(el.innerText).slice(0, 300)}));
@@ -174,6 +186,9 @@ def wcag_tags(rule):
 def axe_selector(node):
     # axe gives a list, one selector per frame or shadow root; a single string is easier for the model to repeat
     return " ".join(str(part) for part in node["target"])
+
+def check_messages(node):
+    return [check["message"] for check in node["any"] + node["all"] + node["none"]]
 
 def assessment_problem(assessment, axe):
     if axe is None:
@@ -286,7 +301,7 @@ def rule_for_model(rule):
         "elements": [{
             "selector": axe_selector(node),
             "html": node["html"][:300],
-            "problems": [check["message"] for check in node["any"] + node["all"] + node["none"]],
+            "problems": check_messages(node),
         } for node in rule["nodes"][:MAX_ELEMENTS_PER_RULE]],
     }
 
@@ -315,7 +330,7 @@ def for_model(tool_name, tool_result):
             **{key: content[key] for key in ("title", "lang") if content[key] is not None},
             "text": text[:MAX_TEXT_CHARS],
             **({"truncated": True} if len(text) > MAX_TEXT_CHARS else {}),
-            "headings": content["headings"],
+            "headings": [item_for_model(heading, "text") for heading in content["headings"]],
             "images_total": len(content["images"]),
             "images": [item_for_model(image, "link_text") for image in content["images"][:MAX_PAGE_ITEMS]],
             "links_total": len(content["links"]),
@@ -350,11 +365,11 @@ def process_tool(tool_name, tool_input):
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
 
-DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b"}
+DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b-instruct"}
 DEFAULT_MAX_OUTPUT_TOKENS = 4096
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Find accessibility problems on a web page.")
+def make_parser(description):
+    parser = argparse.ArgumentParser(description=description)
     parser.add_argument("url", help="the page to check")
     parser.add_argument("--output", type=Path, default=Path("reports/axe_raw.json"),
                         help="where to save axe's raw results (default reports/axe_raw.json)")
@@ -367,6 +382,9 @@ def parse_args():
     parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_MAX_OUTPUT_TOKENS,
                         help="ollama only: the most tokens the model may write per turn, thinking included "
                              f"(default {DEFAULT_MAX_OUTPUT_TOKENS})")
+    return parser
+
+def parse_args(parser):
     args = parser.parse_args()
     if urlparse(args.url).scheme not in ("http", "https"):
         parser.error(f"the URL must start with http:// or https://, got {args.url!r}")
@@ -374,8 +392,21 @@ def parse_args():
         parser.error("--no-think and --max-output-tokens only work with --backend ollama")
     return args
 
+def make_chat(args, system_prompt, tools):
+    model = args.model or DEFAULT_MODELS[args.backend]
+    if args.backend == "ollama":
+        return OllamaChat(model, system_prompt, tools, think=not args.no_think,
+                          max_output_tokens=args.max_output_tokens)
+    return GeminiChat(model, system_prompt, tools)
+
+def report_path(prefix, model, args):
+    name = (model.replace(':', '-').replace('/', '-') + ("_no-think" if args.no_think else "")
+            + "_" + urlparse(args.url).netloc.replace(".", "-")
+            + "_" + datetime.now().strftime("%Y%m%d-%H%M%S"))
+    return Path("reports") / f"{prefix}_{name}.json"
+
 def main():
-    args = parse_args()
+    args = parse_args(make_parser("Find accessibility problems on a web page."))
     
     tools = [
         {
@@ -400,7 +431,8 @@ def main():
         {
             "name": "get_page_content",
             "description": "Loads a web page in a headless browser and returns what a reader sees: its title, the "
-                           "lang attribute of the page, the start of its visible main text, its headings in order, "
+                           "lang attribute of the page, the start of its visible main text, its headings in order "
+                           "with the start of the text under each, "
                            "its visible images and links, and the parts of the page that have their own lang "
                            "attribute, with their text. Each image comes with its selector, src, alt text, "
                            "the text of the link it is in and the text around it; each link with its selector, "
@@ -514,13 +546,7 @@ def main():
         assessments, your decisions on needs_review items in reviews, and the problems you found in agent_findings.
     """
 
-    model = args.model or DEFAULT_MODELS[args.backend]
-    if args.backend == "ollama":
-        chat = OllamaChat(model, system_prompt, tools, think=not args.no_think,
-                          max_output_tokens=args.max_output_tokens)
-    else:
-        chat = GeminiChat(model, system_prompt, tools)
-
+    chat = make_chat(args, system_prompt, tools)
     chat.add_user_message(f"Check the accessibility of {args.url}")
 
     # What the tools found, filled in during the run: the latest successful result of each
@@ -631,12 +657,9 @@ def main():
         unbacked_claims=unbacked_claims,
         text_replies=text_replies,
     )
-    report_name = (chat.model.replace(':', '-').replace('/', '-') + ("_no-think" if args.no_think else "")
-                   + "_" + urlparse(args.url).netloc.replace(".", "-")
-                   + "_" + datetime.now().strftime("%Y%m%d-%H%M%S"))
-    report_path = Path("reports") / f"accessibility_{report_name}.json"
-    report_path.write_text(report.model_dump_json(indent=2))
-    print(f"=====Report saved to {report_path}=====")
+    path = report_path("accessibility", chat.model, args)
+    path.write_text(report.model_dump_json(indent=2))
+    print(f"=====Report saved to {path}=====")
 
 if __name__ == "__main__":
     main()
