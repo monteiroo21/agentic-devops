@@ -1,4 +1,4 @@
-"""Test site for web_analyzer.py: a fictional Porto bike shop with planted link problems.
+"""Test site for link_analyzer.py and link_workflow.py: a fictional Porto bike shop with planted link problems.
 
 One process serves the shop, www.veloribeira.pt, and the fictional "external" sites it links to,
 choosing the site by the Host header. Nothing on the pages says it is a test: the planted problems,

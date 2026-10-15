@@ -1,27 +1,24 @@
-import argparse
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal, get_args
 from urllib.parse import urldefrag, urlparse
 import httpx
 import lxml.html
 from bs4 import BeautifulSoup
-from pydantic import BaseModel, ValidationError
-from dotenv import load_dotenv
-from chat_backends import GeminiChat, OllamaChat
-
-load_dotenv()
+from pydantic import BaseModel
+from common import (AgentReport, make_chat, make_parser, parse_args, report_fields, report_path, run_agent,
+                    split_backed)
 
 client = httpx.Client(
     follow_redirects=True,
     timeout=10.0,
-    headers={"User-Agent": "Mozilla/5.0 (compatible; web-analyzer/0.1)"},
+    headers={"User-Agent": "Mozilla/5.0 (compatible; link-analyzer/0.1)"},
 )
 
 IGNORED_LINK_RELS = {"preconnect", "dns-prefetch"}
 MAX_PAGE_BYTES = 512 * 1024  # enough for the title and first heading of almost any page
+MAX_PAGE_TEXT_CHARS = 2000
 
 class Assessment(BaseModel):
     url: str
@@ -52,37 +49,27 @@ class RejectedClaim(AgentFinding):
 
 class Finding(BaseModel):
     rule: str
-    severity: str
+    severity: str  # error: broken or unreachable, warning: a problem the model found, info: blocked or redirected, needs-review: undecided
     page: str | None
     url: str
     tag: str | None
     text: str | None
     status: int | None
     error: str | None
-    assessment: Assessment | None = None
-    source: str = "tools"
+    source: str  # checker, agent or model
+    verdict: str | None = None  # the workflow model's decision on a link
     evidence: str | None = None
     note: str | None = None
+    likely_intentional: bool | None = None
+    suggested_fix: str | None = None
 
-class Report(BaseModel):
-    target: str
-    model: str
-    thinking: bool = True  # False for local runs with --no-think
-    started_at: str
-    duration_s: float
-    llm_requests: int
-    input_tokens: int
-    output_tokens: int
-    counts: dict[str, int]
-    narrative: str | None  # None for the static baseline, which has no LLM
+class Report(AgentReport):
+    link_checks: dict[str, int]  # links per check verdict: ok, redirect, broken, blocked, unreachable
+    links_found: int  # unique links found on the page
+    links_checked: int  # how many of those were checked; should equal links_found
     findings: list[Finding]
-    unverified_agent_findings: list[AgentFinding] = []
-    rejected_submissions: int = 0  # times the agent submitted findings it hadn't checked
-    unbacked_claims: int = 0  # total unbacked findings across those submissions
+    unverified: list[dict] = []  # submitted items no tool result backs, kept after the last rejection
     rejected_claims: list[RejectedClaim] = []  # each distinct claim that was sent back, and its outcome
-    text_replies: int = 0  # times the model wrote text instead of calling a tool; always 0 for Gemini, which must call one
-    links_found: int = 0  # unique links found on the analyzed page(s)
-    links_checked: int = 0  # how many of those were checked; should equal links_found
 
 
 def page_soup(html):
@@ -191,7 +178,7 @@ def check_page_links(url):
         link["check"] = result
     return page
 
-def fetch_page_text(url, max_chars=2000):
+def fetch_page_text(url, max_chars=MAX_PAGE_TEXT_CHARS):
     # returns the page's title and a short piece of its visible text
     result = {"url": url, "final_url": None, "status": None, "content_type": None,
               "title": None, "heading": None, "text": None, "truncated": False, "error": None}
@@ -228,15 +215,17 @@ def compact(result, leave_out=()):
         kept.pop("final_url", None)
     return kept
 
+def link_for_model(link):
+    # a link and its check as one object, since the check repeats the link's URL
+    return {**compact(link, leave_out=("attribute", "check")), **compact(link["check"], leave_out=("url",))}
+
 def for_model(tool_name, tool_result):
     if tool_name == "check_url":
         return compact(tool_result)
     if tool_name == "check_urls":
         return [compact(result) for result in tool_result]
     if tool_name == "check_page_links":
-        # each link and its check as one object, since the check repeats the link's URL
-        links = [{**compact(link, leave_out=("attribute", "check")), **compact(link["check"], leave_out=("url",))}
-                 for link in tool_result["links"]]
+        links = [link_for_model(link) for link in tool_result["links"]]
         return {**compact(tool_result, leave_out=("links",)), "links": links}
     if tool_name == "fetch_page_text":
         return compact(tool_result, leave_out=() if tool_result["truncated"] else ("truncated",))
@@ -251,11 +240,6 @@ def process_tool(tool_name, tool_input):
         return check_urls(tool_input["urls"])
     elif tool_name == "fetch_page_text":
         return fetch_page_text(tool_input["url"])
-    elif tool_name == "submit_report":
-        try:
-            return SubmitReport.model_validate(tool_input)
-        except ValidationError as e:
-            return {"error": f"Invalid report, fix it and call submit_report again: {e}"}
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
 
@@ -274,8 +258,8 @@ def record_result(tool_name, tool_result, link_info, checks, fetched=None):
     elif tool_name == "fetch_page_text" and fetched is not None:
         fetched[tool_result["url"]] = tool_result
 
-def build_findings(checks, link_info, assessments):
-    assessment_by_url = {a.url: a for a in assessments}
+def build_findings(checks, link_info, notes):
+    # notes are the model's comments on the broken links, by URL: the agent's Assessments or the workflow's LinkNotes
     findings = []
     for url, check in checks.items():
         verdict = check["verdict"]
@@ -290,6 +274,7 @@ def build_findings(checks, link_info, assessments):
             rule, severity = "unreachable", "error"
         else:  # "blocked" or "redirect"
             rule, severity = verdict, "info"
+        note = notes.get(url)
         findings.append(Finding(
             rule=rule,
             severity=severity,
@@ -299,7 +284,10 @@ def build_findings(checks, link_info, assessments):
             text=info.get("text"),
             status=check["status"],
             error=check["error"],
-            assessment=assessment_by_url.get(url),
+            source="checker",
+            note=note.note if note else None,
+            likely_intentional=note.likely_intentional if note else None,
+            suggested_fix=note.suggested_fix if note else None,
         ))
     return findings
 
@@ -309,22 +297,6 @@ def unbacked_reason(agent_finding, checks, fetched):
     if agent_finding.rule == "redirect-to-homepage" and (agent_finding.url in checks or agent_finding.url in fetched):
         return "not-homepage-redirect"
     return "no-tool-result"
-
-def unbacked_message(unbacked, checks, fetched):
-    lines = []
-    for f in unbacked:
-        reason = unbacked_reason(f, checks, fetched)
-        if reason == "not-read":
-            text = "you never read that page or the page it redirects to"
-        elif reason == "not-homepage-redirect":
-            text = f"the tools show it ends on {final_url_of(f.url, checks, fetched)}, which is not a redirect to a homepage"
-        else:
-            text = "no tool result shows this URL"
-        lines.append(f"- {f.rule} for {f.url}: {text}")
-    return ("Report not accepted. These findings are not backed by what the tools showed you:\n"
-            + "\n".join(lines)
-            + "\nCheck them (use fetch_page_text to read a page), give them the rule that fits, or remove them, "
-              "then call submit_report again.")
 
 def final_url_of(url, checks, fetched):
     return (checks.get(url) or fetched.get(url) or {}).get("final_url")
@@ -343,20 +315,53 @@ def is_backed(agent_finding, checks, fetched):
         return False
     return url in fetched or url in checks
 
+def assessment_problem(assessment, checks):
+    check = checks.get(assessment.url)
+    if check is None:
+        return "no tool result shows this URL"
+    if check["verdict"] in ("ok", "redirect"):
+        return ("the tools show this link works, so it needs no assessment; if it has a problem the status code "
+                "does not show, put it in agent_findings")
+    return None
+
+def finding_problem(agent_finding, checks, fetched):
+    if is_backed(agent_finding, checks, fetched):
+        return None
+    reason = unbacked_reason(agent_finding, checks, fetched)
+    if reason == "not-read":
+        return "you never read that page or the page it redirects to"
+    if reason == "not-homepage-redirect":
+        final_url = final_url_of(agent_finding.url, checks, fetched)
+        return f"the tools show it ends on {final_url}, which is not a redirect to a homepage"
+    return "no tool result shows this URL"
+
+def check_report(report, checks, fetched):
+    # splits the report into what the tool results back and what they don't
+    assessments, unverified_assessments = split_backed(
+        report.assessments, "assessment", lambda a: assessment_problem(a, checks))
+    agent_findings, unverified_findings = split_backed(
+        report.agent_findings, "agent_finding", lambda f: finding_problem(f, checks, fetched))
+    return assessments, agent_findings, unverified_assessments + unverified_findings
+
+def unbacked_message(unverified):
+    lines = [f"- {item['kind']}" + (f" {item['rule']}" if "rule" in item else "")
+             + f" for {item['url']}: {item['reason']}" for item in unverified]
+    return ("Report not accepted. These items are not backed by what the tools showed you:\n"
+            + "\n".join(lines)
+            + "\nCheck them (use fetch_page_text to read a page), give them the rule that fits, or remove them, "
+              "then call submit_report again.")
+
 def build_agent_findings(agent_findings, checks, fetched, link_info, findings):
-    # Turn the agent's own findings into report findings, but only if a tool result backs them up
+    # Turn the agent's backed findings into report findings
     already_errors = {f.url for f in findings if f.severity == "error"}
-    verified, unverified = [], []
+    report_findings = []
     for agent_finding in agent_findings:
         url = agent_finding.url
-        if not is_backed(agent_finding, checks, fetched):
-            unverified.append(agent_finding)
-            continue
         if url in already_errors:
-            continue  # already reported as broken by the tools
+            continue  # already reported as broken by the checker
         info = link_info.get(url, {})
         result = checks.get(url) or fetched.get(url, {})
-        verified.append(Finding(
+        report_findings.append(Finding(
             rule=agent_finding.rule,
             severity="warning",
             page=info.get("page"),
@@ -369,7 +374,7 @@ def build_agent_findings(agent_findings, checks, fetched, link_info, findings):
             evidence=agent_finding.evidence,
             note=agent_finding.note,
         ))
-    return verified, unverified
+    return report_findings
 
 def rejection_outcomes(rejections, final_findings, checks, fetched):
     final_rules = {}
@@ -391,27 +396,8 @@ def rejection_outcomes(rejections, final_findings, checks, fetched):
                                       read_afterwards=read_afterwards, outcome=outcome))
     return rejected
 
-DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b-instruct"}
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Find link problems on a web page.")
-    parser.add_argument("--backend", choices=DEFAULT_MODELS, default="gemini",
-                        help="gemini (Google's API) or ollama (a local model)")
-    parser.add_argument("--model", help="the model to use; defaults to "
-                        + ", ".join(f"{model} for {backend}" for backend, model in DEFAULT_MODELS.items()))
-    parser.add_argument("--no-think", action="store_true",
-                        help="ollama only: answer without thinking first, which is much faster on a CPU")
-    parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_MAX_OUTPUT_TOKENS,
-                        help="ollama only: the most tokens the model may write per turn, thinking included "
-                             f"(default {DEFAULT_MAX_OUTPUT_TOKENS})")
-    args = parser.parse_args()
-    if args.backend == "gemini" and (args.no_think or args.max_output_tokens != DEFAULT_MAX_OUTPUT_TOKENS):
-        parser.error("--no-think and --max-output-tokens only work with --backend ollama")
-    return args
-
 def main():
-    args = parse_args()
+    args = parse_args(make_parser("Find link problems on a web page."))
 
     tools = [
         {
@@ -529,7 +515,7 @@ def main():
             }
         }
     ]
-    
+
     system_prompt = """
         You are a web link analyzer. Your goal is to find every link problem on the page the user gives you,
         including problems that the status code alone does not reveal.
@@ -551,138 +537,61 @@ def main():
 
         Only report what the tools showed you. You do not check accessibility, so do not comment on it.
     """
-    
-    model = args.model or DEFAULT_MODELS[args.backend]
-    if args.backend == "ollama":
-        chat = OllamaChat(model, system_prompt, tools, think=not args.no_think,
-                          max_output_tokens=args.max_output_tokens)
-    else:
-        chat = GeminiChat(model, system_prompt, tools)
 
-    user_message = input("\nEnter your message: ")
-    chat.add_user_message(user_message)
+    chat = make_chat(args, system_prompt, tools)
+    chat.add_user_message(f"Check the links on {args.url}")
 
     # What the tools found, filled in during the run
     link_info = {}
     checks = {}
     fetched = {}
-    target = None
-    submitted = None
+    rejections = {}  # each distinct claim that was sent back, with why and how often
 
-    # Metrics for the report
+    def run_tool(tool_name, tool_input):
+        tool_result = process_tool(tool_name, tool_input)
+        record_result(tool_name, tool_result, link_info, checks, fetched)
+        return for_model(tool_name, tool_result)
+
+    def review(report):
+        *_, unverified = check_report(report, checks, fetched)
+        return unverified
+
+    def reject(unverified):
+        for item in unverified:
+            if item["kind"] == "agent_finding":
+                claim = AgentFinding.model_validate(item)
+                entry = rejections.setdefault((claim.url, claim.rule), {
+                    "claim": claim, "reason": unbacked_reason(claim, checks, fetched), "times_rejected": 0})
+                entry["times_rejected"] += 1
+        return unbacked_message(unverified)
+
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
-    llm_requests = 0
-    input_tokens = 0
-    output_tokens = 0
-
-    MAX_REJECTIONS = 2
-    rejected_submissions = 0
-    unbacked_claims = 0
-    rejections = {}
-
-    MAX_TEXT_REPLIES = 2
-    text_replies = 0
-
-    while True:
-        turn = chat.generate()
-
-        if turn.thoughts:
-            print(f"\n====={chat.model}'s thoughts=====\n{turn.thoughts}\n")
-        if turn.text:
-            print(f"\n====={chat.model} says=====\n{turn.text}\n")
-
-        llm_requests += 1
-        input_tokens += turn.input_tokens
-        output_tokens += turn.output_tokens
-
-        if turn.truncated:
-            print(f"====={chat.model} was cut off at the output token limit=====")
-
-        if not turn.tool_calls:
-            if text_replies >= MAX_TEXT_REPLIES:
-                print(f"====={chat.model} has no more function calls=====")
-                break
-            # Local models can't be forced to call a tool, and small ones sometimes write the report as text
-            text_replies += 1
-            print(f"=====No tool call, asking {chat.model} to call a tool=====")
-            chat.add_user_message("You replied with text, but only tool calls are acted on. If you have finished, "
-                                  "hand in your report by calling the submit_report tool; otherwise call the tool "
-                                  "you need next. Do not write the report as text.")
-            continue
-
-        # Answer every tool call in this response, not just the last one
-        results = []
-        for call in sorted(turn.tool_calls, key=lambda call: call.name == "submit_report"):
-            tool_name = call.name
-            tool_input = call.args
-            print(f"====={chat.model} wants to use the {tool_name} tool=====")
-
-            tool_result = process_tool(tool_name, tool_input)
-
-            if isinstance(tool_result, SubmitReport):
-                unbacked = [f for f in tool_result.agent_findings if not is_backed(f, checks, fetched)]
-                if not unbacked or rejected_submissions >= MAX_REJECTIONS:
-                    submitted = tool_result
-                    continue
-                # Send the report back: the agent must look before it claims
-                rejected_submissions += 1
-                unbacked_claims += len(unbacked)
-                for f in unbacked:
-                    entry = rejections.setdefault((f.url, f.rule), {
-                        "claim": f, "reason": unbacked_reason(f, checks, fetched), "times_rejected": 0})
-                    entry["times_rejected"] += 1
-                print(f"=====Report rejected: {len(unbacked)} unbacked finding(s)=====")
-                tool_result = {"error": unbacked_message(unbacked, checks, fetched)}
-
-            if tool_name == "check_page_links" and target is None:
-                target = tool_input["url"]
-            record_result(tool_name, tool_result, link_info, checks, fetched)
-            model_result = for_model(tool_name, tool_result)
-            print(f"=====Result of {tool_name}=====\n{model_result}\n")
-            results.append((call, model_result))
-
-        if submitted is not None:
-            print(f"====={chat.model} has submitted the final report=====")
-            break
-
-        chat.add_tool_results(results)
+    submitted, usage = run_agent(chat, run_tool, SubmitReport, review, reject)
 
     if submitted is None:
-        print("=====No valid report was submitted=====")
         return
 
-    findings = build_findings(checks, link_info, submitted.assessments)
-    agent_findings, unverified = build_agent_findings(submitted.agent_findings, checks, fetched, link_info, findings)
+    assessments, agent_findings, unverified = check_report(submitted, checks, fetched)
+    findings = build_findings(checks, link_info, {a.url: a for a in assessments})
+    findings += build_agent_findings(agent_findings, checks, fetched, link_info, findings)
     report = Report(
-        target=target or user_message,
-        model=chat.model,
-        thinking=not args.no_think,
-        started_at=started_at,
-        duration_s=round(time.perf_counter() - start, 1),
-        llm_requests=llm_requests,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        counts=dict(Counter(check["verdict"] for check in checks.values())),
+        **report_fields(args, chat, started_at, start, usage),
+        counts=dict(Counter(f.severity for f in findings)),
         narrative=submitted.narrative,
-        findings=findings + agent_findings,
-        unverified_agent_findings=unverified,
-        rejected_submissions=rejected_submissions,
-        unbacked_claims=unbacked_claims,
-        rejected_claims=rejection_outcomes(rejections, submitted.agent_findings, checks, fetched),
-        text_replies=text_replies,
+        rejected_submissions=usage["rejected_submissions"],
+        unbacked_claims=usage["unbacked_claims"],
+        text_replies=usage["text_replies"],
+        link_checks=dict(Counter(check["verdict"] for check in checks.values())),
         links_found=len(link_info),
         links_checked=sum(1 for url in link_info if url in checks),
+        findings=findings,
+        unverified=unverified,
+        rejected_claims=rejection_outcomes(rejections, submitted.agent_findings, checks, fetched),
     )
-    report_json = report.model_dump_json(indent=2)
-    report_name = chat.model.replace(':', '-').replace('/', '-') + ("_no-think" if args.no_think else "")
-    report_path = Path("reports") / f"report_{report_name}.json"
-    report_path.write_text(report_json)
-    print(f"=====Report saved to {report_path}=====")
-
+    path = report_path("links", chat.model, args)
+    path.write_text(report.model_dump_json(indent=2))
+    print(f"=====Report saved to {path}=====")
 
 if __name__ == "__main__":
     main()
-            
-    
-    

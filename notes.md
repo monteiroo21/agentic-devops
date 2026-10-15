@@ -2,8 +2,8 @@
 
 - [ ] Clean the code
 - [ ] Check the results obtained
-- [ ] Apply workflow also to broken links checker
-- [ ] Make code coeherent between link checker and accesibility checker
+- [x] Apply workflow also to broken links checker
+- [x] Make code coeherent between link checker and accesibility checker
 - [ ] Add tool for screenshots (would need a Vision Model instead)
 - [ ] Add the option for the model to interact with the page (?)
 - [ ] Add script flag for thinking effort of Gemini

@@ -1,48 +1,13 @@
-import json
 import time
 from collections import Counter
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal
-from pydantic import BaseModel, ValidationError
+from functools import partial
+from pydantic import BaseModel
 from accessibility_analyzer import (MAX_TEXT_CHARS, WCAG_FOR_RULE, Finding, axe_selector, check_messages,
-                                    get_page_content, item_for_model, make_chat, make_parser, parse_args,
-                                    report_path, run_axe, wcag_tags)
-
-MAX_RETRIES = 2  # times a batch is asked again about the elements its answer left out
-
-class Verdict(BaseModel):
-    id: str
-    reason: str
-    verdict: Literal["pass", "fail", "unsure"]
-
-class Note(BaseModel):
-    id: str
-    note: str
-    suggested_fix: str | None = None
-
-def answers_schema(key, properties, required):
-    return {
-        "type": "object",
-        "properties": {
-            key: {"type": "array", "items": {"type": "object", "properties": properties, "required": required}},
-        },
-        "required": [key],
-    }
-
-# the reason comes before the verdict, so the model explains before it decides
-ANSWER_FORMATS = {
-    Verdict: ("verdicts", answers_schema("verdicts", {
-        "id": {"type": "string"},
-        "reason": {"type": "string"},
-        "verdict": {"type": "string", "enum": ["pass", "fail", "unsure"]},
-    }, ["id", "reason", "verdict"])),
-    Note: ("notes", answers_schema("notes", {
-        "id": {"type": "string"},
-        "note": {"type": "string"},
-        "suggested_fix": {"type": "string"},
-    }, ["id", "note"])),
-}
+                                    get_page_content, item_for_model, make_axe_parser, run_axe, save_axe,
+                                    wcag_tags)
+from common import (VERDICT_SEVERITY, Answers, Note, WorkflowReport, add_task, ask_tasks, criteria_counts,
+                    make_chat, parse_args, report_fields, report_path, with_ids, without)
 
 SYSTEM_PROMPT = """
     You are a web accessibility reviewer. You judge one WCAG 2.2 criterion at a time for a few elements of a web
@@ -95,20 +60,6 @@ no section_text that is followed by lower-level headings is fine: those subheadi
 a list of links passes if it names what the links have in common. Skipped heading levels alone aren't a WCAG
 failure."""
 
-@dataclass
-class Task:
-    criterion: str  # a rule from WCAG_FOR_RULE, or axe-violations or axe-needs-review
-    instructions: str
-    items: list[dict]  # what the model sees about each element, with its id
-    answer: type = Verdict
-    batched: bool = True  # False when the model needs every item at once, like a heading outline
-
-def with_ids(items, prefix):
-    return [(f"{prefix}-{number}", item) for number, item in enumerate(items, 1)]
-
-def without(item, *keys):
-    return {key: value for key, value in item.items() if key not in keys}
-
 def repeated_link_texts(links):
     groups = {}
     for link in links:
@@ -125,17 +76,11 @@ def group_for_model(group):
         for link in group]}
 
 def build_tasks(axe, content):
-    # the questions to ask, and what the report keeps about each element, by id
+    # the questions to ask, and what the report keeps about each element, by id;
+    # the criterion is a rule from WCAG_FOR_RULE, or axe-violations or axe-needs-review
     tasks = []
     elements = {}
-
-    def add(criterion, instructions, entries, **options):
-        # entries are (id, what the model sees, what the report keeps)
-        for element_id, _, kept in entries:
-            elements[element_id] = {"criterion": criterion, **kept}
-        if entries:
-            tasks.append(Task(criterion, instructions,
-                              [{"id": element_id, **shown} for element_id, shown, _ in entries], **options))
+    add = partial(add_task, tasks, elements)
 
     if axe is not None:
         add("axe-violations", VIOLATIONS, [
@@ -180,50 +125,6 @@ def build_tasks(axe, content):
             batched=False)
     return tasks, elements
 
-def batches(task, size):
-    if not task.batched:
-        return [task.items]
-    return [task.items[start:start + size] for start in range(0, len(task.items), size)]
-
-def ask(chat, task, items, usage):
-    # asks about items until each has a valid answer or the retries run out
-    key, schema = ANSWER_FORMATS[task.answer]
-    asked = {item["id"] for item in items}
-    answers, omitted, invented = {}, [], []
-    pending = items
-    for attempt in range(1 + MAX_RETRIES):
-        if attempt:
-            print(f"=====Asking again about {len(pending)} element(s) left out=====")
-        reply = chat.ask_json(task.instructions + "\n\n" + json.dumps(pending, ensure_ascii=False, indent=1), schema)
-        usage.update(requests=1, input_tokens=reply.input_tokens, output_tokens=reply.output_tokens,
-                     truncated_replies=int(reply.truncated))
-        if reply.thoughts:
-            print(f"====={chat.model}'s thoughts=====\n{reply.thoughts}\n")
-
-        returned = reply.data.get(key) if isinstance(reply.data, dict) else None
-        if not isinstance(returned, list):
-            usage["invalid_replies"] += 1
-            print(f"=====Not an answer in the expected format=====\n{reply.text}\n")
-            returned = []
-        for raw in returned:
-            try:
-                answer = task.answer.model_validate(raw)
-            except ValidationError:
-                continue  # an answer that doesn't follow the format counts as no answer
-            if answer.id not in asked:
-                invented.append(answer.id)
-            elif answer.id not in answers:
-                answers[answer.id] = answer
-                print(f"{answer.id}: " + (f"{answer.verdict} | {answer.reason}" if isinstance(answer, Verdict)
-                                          else answer.note))
-
-        pending = [item for item in pending if item["id"] not in answers]
-        if attempt == 0:
-            omitted = [item["id"] for item in pending]
-        if not pending:
-            break
-    return answers, omitted, invented
-
 class ElementVerdict(BaseModel):
     criterion: str
     id: str
@@ -232,26 +133,10 @@ class ElementVerdict(BaseModel):
     reason: str | None = None
     omitted_first: bool = False  # left out of the model's first answer for its batch
 
-class WorkflowReport(BaseModel):
-    mode: str = "workflow"
-    target: str
-    model: str
-    thinking: bool = True
-    started_at: str
-    duration_s: float
-    llm_requests: int
-    input_tokens: int
-    output_tokens: int
-    invalid_replies: int  # replies that weren't JSON in the expected format
-    truncated_replies: int  # replies cut off at the output token limit
-    batch_size: int
+class AccessibilityWorkflowReport(WorkflowReport):
     axe_version: str | None
-    counts: dict[str, int]  # findings per severity
-    criteria: dict[str, dict[str, int]]  # per criterion: elements, each verdict, omitted_first, invented
     findings: list[Finding]
     verdicts: list[ElementVerdict]  # every element judged, passes included
-
-VERDICT_SEVERITY = {"pass": "info", "fail": "warning", "unsure": "needs-review", "unanswered": "needs-review"}
 
 def build_findings(axe, elements, answers, omitted):
     findings, verdicts = [], []
@@ -302,26 +187,9 @@ def build_findings(axe, elements, answers, omitted):
         ))
     return findings, verdicts
 
-def criteria_counts(verdicts, invented):
-    counts = {}
-    for verdict in verdicts:
-        criterion = counts.setdefault(verdict.criterion, Counter())
-        criterion["elements"] += 1
-        criterion[verdict.verdict] += 1
-        criterion["omitted_first"] += verdict.omitted_first
-    for criterion, number in invented.items():
-        if number:
-            counts.setdefault(criterion, Counter())["invented"] += number
-    return {criterion: dict(numbers) for criterion, numbers in counts.items()}
-
 def main():
-    parser = make_parser("Find accessibility problems on a web page, asking the model about one criterion "
-                         "and a few elements at a time.")
-    parser.add_argument("--batch-size", type=int, default=8,
-                        help="how many elements the model judges in one call (default 8)")
-    args = parse_args(parser)
-    if args.batch_size < 1:
-        parser.error("--batch-size must be at least 1")
+    args = parse_args(make_axe_parser("Find accessibility problems on a web page, asking the model about one "
+                                      "criterion and a few elements at a time.", workflow=True))
     chat = make_chat(args, SYSTEM_PROMPT, tools=[])
 
     started_at = datetime.now(timezone.utc).isoformat()
@@ -336,37 +204,21 @@ def main():
     if axe is None and content is None:
         return
     if axe is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(axe, indent=2))
+        save_axe(axe, args)
 
     tasks, elements = build_tasks(axe, content)
     usage = Counter()
-    answers, omitted, invented = {}, set(), Counter()
-    for task in tasks:
-        task_batches = batches(task, args.batch_size)
-        for number, items in enumerate(task_batches, 1):
-            print(f"\n====={task.criterion}: batch {number} of {len(task_batches)}, {len(items)} element(s)=====")
-            batch_answers, batch_omitted, batch_invented = ask(chat, task, items, usage)
-            answers.update(batch_answers)
-            omitted.update(batch_omitted)
-            invented[task.criterion] += len(batch_invented)
+    answers = Answers()
+    ask_tasks(chat, tasks, args.batch_size, usage, answers)
 
-    findings, verdicts = build_findings(axe, elements, answers, omitted)
-    report = WorkflowReport(
-        target=args.url,
-        model=chat.model,
-        thinking=not args.no_think,
-        started_at=started_at,
-        duration_s=round(time.perf_counter() - start, 1),
-        llm_requests=usage["requests"],
-        input_tokens=usage["input_tokens"],
-        output_tokens=usage["output_tokens"],
-        invalid_replies=usage["invalid_replies"],
-        truncated_replies=usage["truncated_replies"],
-        batch_size=args.batch_size,
-        axe_version=axe["testEngine"]["version"] if axe is not None else None,
+    findings, verdicts = build_findings(axe, elements, answers.by_id, answers.omitted)
+    report = AccessibilityWorkflowReport(
+        **report_fields(args, chat, started_at, start, usage),
         counts=dict(Counter(finding.severity for finding in findings)),
-        criteria=criteria_counts(verdicts, invented),
+        invalid_replies=usage["invalid_replies"],
+        batch_size=args.batch_size,
+        criteria=criteria_counts(verdicts, answers.invented),
+        axe_version=axe["testEngine"]["version"] if axe is not None else None,
         findings=findings,
         verdicts=verdicts,
     )

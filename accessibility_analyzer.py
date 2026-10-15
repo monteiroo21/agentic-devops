@@ -1,17 +1,13 @@
-import argparse
 import json
 import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, get_args
-from urllib.parse import urlparse
-from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
-from pydantic import BaseModel, ValidationError
-from chat_backends import GeminiChat, OllamaChat
-
-load_dotenv()
+from pydantic import BaseModel
+from common import (AgentReport, make_chat, make_parser, parse_args, report_fields, report_path, run_agent,
+                    split_backed)
 
 AXE_JS = Path("node_modules/axe-core/axe.min.js").read_text()
 WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
@@ -66,24 +62,10 @@ class Finding(BaseModel):
     note: str | None = None
     suggested_fix: str | None = None
 
-class Report(BaseModel):
-    mode: str = "agent"  # the workflow's reports say "workflow"
-    target: str
-    model: str
-    thinking: bool = True  # False for local runs with --no-think
-    started_at: str
-    duration_s: float
-    llm_requests: int
-    input_tokens: int
-    output_tokens: int
+class Report(AgentReport):
     axe_version: str | None
-    counts: dict[str, int]  # findings per severity
-    narrative: str
     findings: list[Finding]
     unverified: list[dict] = []  # submitted items no tool result backs, kept after the last rejection
-    rejected_submissions: int = 0  # times the agent submitted items it hadn't checked
-    unbacked_claims: int = 0  # total unbacked items across those submissions
-    text_replies: int = 0  # times the model wrote text instead of calling a tool
 
 # Runs in the page: what a reader sees, for the judgements axe can't make
 PAGE_CONTENT_JS = r"""() => {
@@ -217,16 +199,6 @@ def finding_problem(finding, content):
         return f"get_page_content returned no {noun} with that selector"
     return None
 
-def split_backed(items, kind, problem_of):
-    backed, unverified = [], []
-    for item in items:
-        problem = problem_of(item)
-        if problem:
-            unverified.append({"kind": kind, **item.model_dump(), "reason": problem})
-        else:
-            backed.append(item)
-    return backed, unverified
-
 def check_report(report, axe, content):
     # splits the report into what the tool results back and what they don't
     assessments, unverified_assessments = split_backed(
@@ -357,57 +329,22 @@ def process_tool(tool_name, tool_input):
         return run_axe(tool_input["url"])
     elif tool_name == "get_page_content":
         return get_page_content(tool_input["url"])
-    elif tool_name == "submit_report":
-        try:
-            return SubmitReport.model_validate(tool_input)
-        except ValidationError as e:
-            return {"error": f"Invalid report, fix it and call submit_report again: {e}"}
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
 
-DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b-instruct"}
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
-
-def make_parser(description):
-    parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("url", help="the page to check")
+def make_axe_parser(description, **options):
+    parser = make_parser(description, **options)
     parser.add_argument("--output", type=Path, default=Path("reports/axe_raw.json"),
                         help="where to save axe's raw results (default reports/axe_raw.json)")
-    parser.add_argument("--backend", choices=DEFAULT_MODELS, default="gemini",
-                        help="gemini (Google's API) or ollama (a local model)")
-    parser.add_argument("--model", help="the model to use; defaults to "
-                        + ", ".join(f"{model} for {backend}" for backend, model in DEFAULT_MODELS.items()))
-    parser.add_argument("--no-think", action="store_true",
-                        help="ollama only: answer without thinking first, which is much faster on a CPU")
-    parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_MAX_OUTPUT_TOKENS,
-                        help="ollama only: the most tokens the model may write per turn, thinking included "
-                             f"(default {DEFAULT_MAX_OUTPUT_TOKENS})")
     return parser
 
-def parse_args(parser):
-    args = parser.parse_args()
-    if urlparse(args.url).scheme not in ("http", "https"):
-        parser.error(f"the URL must start with http:// or https://, got {args.url!r}")
-    if args.backend == "gemini" and (args.no_think or args.max_output_tokens != DEFAULT_MAX_OUTPUT_TOKENS):
-        parser.error("--no-think and --max-output-tokens only work with --backend ollama")
-    return args
-
-def make_chat(args, system_prompt, tools):
-    model = args.model or DEFAULT_MODELS[args.backend]
-    if args.backend == "ollama":
-        return OllamaChat(model, system_prompt, tools, think=not args.no_think,
-                          max_output_tokens=args.max_output_tokens)
-    return GeminiChat(model, system_prompt, tools)
-
-def report_path(prefix, model, args):
-    name = (model.replace(':', '-').replace('/', '-') + ("_no-think" if args.no_think else "")
-            + "_" + urlparse(args.url).netloc.replace(".", "-")
-            + "_" + datetime.now().strftime("%Y%m%d-%H%M%S"))
-    return Path("reports") / f"{prefix}_{name}.json"
+def save_axe(axe, args):
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(axe, indent=2))
 
 def main():
-    args = parse_args(make_parser("Find accessibility problems on a web page."))
-    
+    args = parse_args(make_axe_parser("Find accessibility problems on a web page."))
+
     tools = [
         {
             "name": "run_axe",
@@ -558,110 +495,43 @@ def main():
     # What the tools found, filled in during the run: the latest successful result of each
     axe = None
     content = None
-    submitted = None
 
-    # Metrics for the report
+    def run_tool(tool_name, tool_input):
+        nonlocal axe, content
+        tool_result = process_tool(tool_name, tool_input)
+        if tool_name == "run_axe" and tool_result["axe"] is not None:
+            axe = tool_result["axe"]
+        elif tool_name == "get_page_content" and tool_result["content"] is not None:
+            content = tool_result["content"]
+        return for_model(tool_name, tool_result)
+
+    def review(report):
+        *_, unverified = check_report(report, axe, content)
+        return unverified
+
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
-    llm_requests = 0
-    input_tokens = 0
-    output_tokens = 0
-
-    MAX_REJECTIONS = 2
-    rejected_submissions = 0
-    unbacked_claims = 0
-
-    MAX_TEXT_REPLIES = 2
-    text_replies = 0
-
-    while True:
-        turn = chat.generate()
-
-        if turn.thoughts:
-            print(f"\n====={chat.model}'s thoughts=====\n{turn.thoughts}\n")
-        if turn.text:
-            print(f"\n====={chat.model} says=====\n{turn.text}\n")
-
-        llm_requests += 1
-        input_tokens += turn.input_tokens
-        output_tokens += turn.output_tokens
-
-        if turn.truncated:
-            print(f"====={chat.model} was cut off at the output token limit=====")
-
-        if not turn.tool_calls:
-            if text_replies >= MAX_TEXT_REPLIES:
-                print(f"====={chat.model} has no more function calls=====")
-                break
-            # Local models can't be forced to call a tool, and small ones sometimes write the report as text
-            text_replies += 1
-            print(f"=====No tool call, asking {chat.model} to call a tool=====")
-            chat.add_user_message("You replied with text, but only tool calls are acted on. If you have finished, "
-                                  "hand in your report by calling the submit_report tool; otherwise call the tool "
-                                  "you need next. Do not write the report as text.")
-            continue
-
-        # Answer every tool call in this response, not just the last one
-        results = []
-        for call in sorted(turn.tool_calls, key=lambda call: call.name == "submit_report"):
-            tool_name = call.name
-            print(f"====={chat.model} wants to use the {tool_name} tool=====")
-
-            tool_result = process_tool(tool_name, call.args)
-
-            if isinstance(tool_result, SubmitReport):
-                *_, unverified = check_report(tool_result, axe, content)
-                if not unverified or rejected_submissions >= MAX_REJECTIONS:
-                    submitted = tool_result
-                    continue
-                # Send the report back: the agent must look before it claims
-                rejected_submissions += 1
-                unbacked_claims += len(unverified)
-                print(f"=====Report rejected: {len(unverified)} unbacked item(s)=====")
-                tool_result = {"error": unbacked_message(unverified)}
-            elif tool_name == "run_axe" and tool_result["axe"] is not None:
-                axe = tool_result["axe"]
-            elif tool_name == "get_page_content" and tool_result["content"] is not None:
-                content = tool_result["content"]
-
-            model_result = for_model(tool_name, tool_result)
-            print(f"=====Result of {tool_name}=====\n{json.dumps(model_result, indent=2, ensure_ascii=False)}\n")
-            results.append((call, model_result))
-
-        if submitted is not None:
-            print(f"====={chat.model} has submitted the final report=====")
-            break
-
-        chat.add_tool_results(results)
+    submitted, usage = run_agent(chat, run_tool, SubmitReport, review, unbacked_message)
 
     if axe is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(axe, indent=2))
+        save_axe(axe, args)
 
     if submitted is None:
-        print("=====No valid report was submitted=====")
         return
 
     assessments, reviews, agent_findings, unverified = check_report(submitted, axe, content)
     findings = ((axe_report_findings(axe, assessments, reviews) if axe is not None else [])
                 + [agent_report_finding(f) for f in agent_findings])
     report = Report(
-        target=args.url,
-        model=chat.model,
-        thinking=not args.no_think,
-        started_at=started_at,
-        duration_s=round(time.perf_counter() - start, 1),
-        llm_requests=llm_requests,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
-        axe_version=axe["testEngine"]["version"] if axe is not None else None,
+        **report_fields(args, chat, started_at, start, usage),
         counts=dict(Counter(f.severity for f in findings)),
         narrative=submitted.narrative,
+        rejected_submissions=usage["rejected_submissions"],
+        unbacked_claims=usage["unbacked_claims"],
+        text_replies=usage["text_replies"],
+        axe_version=axe["testEngine"]["version"] if axe is not None else None,
         findings=findings,
         unverified=unverified,
-        rejected_submissions=rejected_submissions,
-        unbacked_claims=unbacked_claims,
-        text_replies=text_replies,
     )
     path = report_path("accessibility", chat.model, args)
     path.write_text(report.model_dump_json(indent=2))

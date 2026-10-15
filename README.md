@@ -6,7 +6,7 @@ Google's Gemini API or on a local model through Ollama.
 
 ## What the analyzers do
 
-### Link analyzer: `web_analyzer.py`
+### Link analyzer: `link_analyzer.py` and `link_workflow.py`
 
 Finds broken links on a page.
 
@@ -14,14 +14,26 @@ Finds broken links on a page.
    scripts, stylesheets) and requests each one. It records the status code, redirect chain, final URL and,
    for HTML pages, the title and first heading. Broken, unreachable and blocked links are reported from
    these results.
-2. **Model.** A status of 200 doesn't mean the link works as intended, so the model looks for problems the
-   status code doesn't show:
+2. **Model.** The model explains each broken link and suggests a fix. A status of 200 doesn't mean the link
+   works as intended, so the model also looks for problems the status code doesn't show:
    - soft 404s: the server returns 200, but the page is an error page
    - redirects that end on the homepage or on a login page
    - link text that doesn't match the page the link leads to
 
-   The model reads pages with `fetch_page_text` before it reports a problem. If it reports something no
-   tool result backs up, the report is sent back to it, at most twice.
+There are two versions:
+
+- **`link_analyzer.py` (agent).** The model calls the tools itself and submits one report. It reads pages
+  with `fetch_page_text` before it reports a problem. If it reports something no tool result backs up, the
+  report is sent back to it, at most twice.
+- **`link_workflow.py` (workflow).** The script checks the links and reads every page they lead to itself.
+  It then asks the model one question at a time about a few links, with answers in JSON:
+  1. notes on the broken links
+  2. soft-404, for each page the links lead to
+  3. redirect, for each redirected link
+  4. text-mismatch, for each link with text
+
+  A link that fails one question is left out of the later ones, so it gets at most one finding from the
+  model.
 
 [LinkChecker](https://linkchecker.github.io/linkchecker/) is the static baseline the analyzer is compared
 against.
@@ -47,8 +59,11 @@ There are two versions:
 - **`accessibility_analyzer.py` (agent).** The model calls the tools itself and submits one report. Findings
   the tools don't back up are sent back, as in the link analyzer.
 - **`accessibility_workflow.py` (workflow).** The script runs axe and reads the page itself. It then asks the
-  model about one criterion and a few elements at a time, with answers in JSON. This version is meant for
-  small local models, which struggle to drive a long tool-calling loop.
+  model about one criterion and a few elements at a time, with answers in JSON.
+
+The workflow versions are meant for small local models, which struggle to drive a long tool-calling loop.
+Both versions of each analyzer share their command-line flags, agent loop and report format through
+`common.py`.
 
 ## Models
 
@@ -146,22 +161,21 @@ Each of these pages has its own planted problems:
 Run every command from the project root, because the scripts use relative paths to `node_modules/` and
 `reports/`.
 
+Every analyzer takes the page to check as its first argument.
+
 ### Link analyzer
 
 ```bash
-uv run web_analyzer.py                                 # Gemini
-uv run web_analyzer.py --backend ollama --no-think     # qwen3:4b-instruct on Ollama
-```
+# agent
+uv run link_analyzer.py http://www.veloribeira.pt/
+uv run link_analyzer.py http://www.veloribeira.pt/ --backend ollama --no-think
 
-The script asks for a message. Type the page to check, for example:
-
-```
-Enter your message: Check the links on http://www.veloribeira.pt/
+# workflow
+uv run link_workflow.py http://www.veloribeira.pt/
+uv run link_workflow.py http://www.veloribeira.pt/ --backend ollama --no-think --batch-size 4
 ```
 
 ### Accessibility analyzer
-
-The accessibility analyzers take the URL as an argument:
 
 ```bash
 # agent
@@ -175,25 +189,47 @@ uv run accessibility_workflow.py http://www.veloribeira.pt/ --backend ollama --n
 
 ### Flags
 
-| Flag                      | Accessibility agent | Accessibility workflow | Description                                                                                        |
-| ------------------------- | :-----------------: | :--------------------: | -------------------------------------------------------------------------------------------------- |
-| `url`                     |          ✓          |           ✓            | The page to check. Must start with `http://` or `https://`.                                        |
-| `--backend {gemini,ollama}` |          ✓          |           ✓            | Use Google's API or a local model. Default `gemini`.                                               |
-| `--model NAME`            |          ✓          |           ✓            | The model to use. Default `gemini-3.1-flash-lite` for Gemini, `qwen3:4b-instruct` for Ollama.      |
-| `--no-think`              |          ✓          |           ✓            | Ollama only. Answer without thinking first, which is much faster on a CPU.                         |
-| `--max-output-tokens N`   |          ✓          |           ✓            | Ollama only. The most tokens the model may write per turn, thinking included. Default `4096`.      |
-| `--output PATH`           |          ✓          |           ✓            | Where to save axe's raw results. Default `reports/axe_raw.json`.                                   |
-| `--batch-size N`          |                     |           ✓            | How many elements the model judges in one call. Default `8`.                                       |
+| Flag                        | Link agent | Link workflow | Accessibility agent | Accessibility workflow | Description                                                                                   |
+| --------------------------- | :--------: | :-----------: | :-----------------: | :--------------------: | --------------------------------------------------------------------------------------------- |
+| `url`                       |     ✓      |       ✓       |          ✓          |           ✓            | The page to check. Must start with `http://` or `https://`.                                   |
+| `--backend {gemini,ollama}` |     ✓      |       ✓       |          ✓          |           ✓            | Use Google's API or a local model. Default `gemini`.                                          |
+| `--model NAME`              |     ✓      |       ✓       |          ✓          |           ✓            | The model to use. Default `gemini-3.1-flash-lite` for Gemini, `qwen3:4b-instruct` for Ollama. |
+| `--no-think`                |     ✓      |       ✓       |          ✓          |           ✓            | Ollama only. Answer without thinking first, which is much faster on a CPU.                    |
+| `--max-output-tokens N`     |     ✓      |       ✓       |          ✓          |           ✓            | Ollama only. The most tokens the model may write per turn, thinking included. Default `4096`. |
+| `--batch-size N`            |            |       ✓       |                     |           ✓            | How many elements the model judges in one call. Default `8`.                                  |
+| `--output PATH`             |            |               |          ✓          |           ✓            | Where to save axe's raw results. Default `reports/axe_raw.json`.                              |
 
 `--no-think` and `--max-output-tokens` are rejected with `--backend gemini`. Run any script with `--help` to
 see its flags.
 
+### Reports
+
+Each run saves a JSON report to `reports/`, named after the analyzer, the model, the host and path of the page,
+and the time of the run:
+
+```
+reports/links_gemini-3.1-flash-lite_www-veloribeira-pt_20261015-143000.json
+reports/links-workflow_qwen3-4b-instruct_no-think_www-veloribeira-pt_partners_20261015-143000.json
+reports/accessibility_…   reports/accessibility-workflow_…
+```
+
+Every report starts with the same fields:
+- `mode`: `agent` or `workflow`
+- `target`, `model`, `thinking` and `started_at`
+- `duration_s`, `llm_requests`, `input_tokens`, `output_tokens` and `truncated_replies`
+- `counts`: the findings per severity
+
+Agent reports then have the model's `narrative` and how often its report was sent back. Workflow reports have
+per-criterion `criteria` counts and a `verdicts` list with every element judged, passes included.
+
 ## Project layout
 
 ```
-web_analyzer.py            link analyzer
+link_analyzer.py           link analyzer (agent)
+link_workflow.py           link analyzer (workflow)
 accessibility_analyzer.py  accessibility analyzer (agent)
 accessibility_workflow.py  accessibility analyzer (workflow)
+common.py                  command line, agent loop, workflow questions and report fields shared by all four
 chat_backends.py           Gemini and Ollama clients behind one interface
 testsite/                  test server and its pages
 reports/                   generated reports
