@@ -3,11 +3,11 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, get_args
+from typing import Literal
 from playwright.sync_api import sync_playwright
-from pydantic import BaseModel
-from common import (AgentReport, make_chat, make_parser, parse_args, report_fields, report_path, run_agent,
-                    split_backed)
+from pydantic import BaseModel, Field
+from pydantic_ai import Tool
+from common import AgentReport, make_parser, parse_args, report_fields, report_path, run_agent, split_backed
 
 AXE_JS = Path("node_modules/axe-core/axe.min.js").read_text()
 WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
@@ -16,16 +16,18 @@ MAX_PAGE_ITEMS = 50
 MAX_TEXT_CHARS = 2000
 
 class Assessment(BaseModel):
-    rule: str
-    note: str
-    suggested_fix: str | None = None
+    rule: str = Field(description="The axe rule, exactly as run_axe returned it.")
+    note: str = Field(description="One or two sentences explaining the problem and who it affects.")
+    suggested_fix: str | None = Field(None, description="How to fix it, if you can tell.")
 
 class Review(BaseModel):
-    rule: str
-    selector: str
-    verdict: Literal["pass", "fail", "manual-review"]
-    evidence: str
-    note: str
+    rule: str = Field(description="The axe rule, exactly as run_axe returned it.")
+    selector: str = Field(description="The element's selector, exactly as run_axe returned it.")
+    verdict: Literal["pass", "fail", "manual-review"] = Field(
+        description="pass or fail if the tool results show which, otherwise manual-review.")
+    evidence: str = Field(
+        description="What in the tool results supports the verdict, or what is missing to decide.")
+    note: str = Field(description="One or two sentences explaining the verdict.")
 
 AgentRule = Literal["alt-text", "link-purpose", "page-title", "page-language", "heading"]
 WCAG_FOR_RULE = {"alt-text": ["wcag111"], "link-purpose": ["wcag244"], "page-title": ["wcag242"],
@@ -35,17 +37,25 @@ ELEMENT_LISTS = {"alt-text": ("images", "image"), "link-purpose": ("links", "lin
 NEEDS_SELECTOR = {"alt-text", "link-purpose"}
 
 class AgentFinding(BaseModel):
-    rule: AgentRule
-    selector: str | None = None  # None for a problem with the page as a whole
-    evidence: str
-    note: str
-    suggested_fix: str | None = None
+    rule: AgentRule = Field(description="The kind of problem.")
+    selector: str | None = Field(  # None for a problem with the page as a whole
+        None, description="The element with the problem, exactly as get_page_content returned it. Leave it out for "
+                          "the page title, or for a problem with the page as a whole.")
+    evidence: str = Field(description="What in the tool results shows the problem, e.g. the alt text, or a link's "
+                                      "text and its context.")
+    note: str = Field(description="One or two sentences explaining the problem and who it affects.")
+    suggested_fix: str | None = Field(None, description="How to fix it, if you can tell.")
 
 class SubmitReport(BaseModel):
-    narrative: str
-    assessments: list[Assessment] = []
-    reviews: list[Review] = []
-    agent_findings: list[AgentFinding] = []
+    """Hand in the final report. Call this once, after you have finished investigating."""
+    narrative: str = Field(
+        description="A 2-4 sentence summary of the page's accessibility. Only mention things the tools showed.")
+    assessments: list[Assessment] = Field(
+        [], description="One entry per rule in run_axe's violations. Empty if there are none.")
+    reviews: list[Review] = Field(
+        [], description="One entry per element in run_axe's needs_review. Empty if there are none.")
+    agent_findings: list[AgentFinding] = Field(
+        [], description="Problems you found with get_page_content that axe does not report. Empty if there are none.")
 
 REVIEW_SEVERITY = {"fail": "warning", "pass": "info", "manual-review": "needs-review"}
 
@@ -342,116 +352,26 @@ def save_axe(axe, args):
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(axe, indent=2))
 
+RUN_AXE = ("Loads a web page in a headless browser and runs the axe-core automated accessibility checks for WCAG "
+           "levels A and AA on it. Returns the page's status code, the rules the page violates and the rules axe "
+           "could not decide, which need review, each with its impact, WCAG tags and up to "
+           f"{MAX_ELEMENTS_PER_RULE} of the elements involved, and the ids of the rules that every element passed. "
+           "The final URL is only given when the page redirected, and an error only when the page could not be "
+           "checked.")
+
+GET_PAGE_CONTENT = ("Loads a web page in a headless browser and returns what a reader sees: its title, the lang "
+                    "attribute of the page, the start of its visible main text, its headings in order with the start "
+                    "of the text under each, its visible images and links, and the parts of the page that have their "
+                    "own lang attribute, with their text. Each image comes with its selector, src, alt text, the text "
+                    "of the link it is in and the text around it; each link with its selector, text, URL, aria-label "
+                    "and title attributes and the text around it. Both also give the heading of the section they are "
+                    "in. A passage in another language that is not listed in parts has no lang attribute of its own. "
+                    f"Up to {MAX_PAGE_ITEMS} images, links and parts are listed. Empty fields are left out: an image "
+                    "with no alt attribute has no alt field, while a decorative image has an empty one. The final URL "
+                    "is only given when the page redirected, and an error only when the page could not be loaded.")
+
 def main():
     args = parse_args(make_axe_parser("Find accessibility problems on a web page."))
-
-    tools = [
-        {
-            "name": "run_axe",
-            "description": "Loads a web page in a headless browser and runs the axe-core automated accessibility "
-                           "checks for WCAG levels A and AA on it. Returns the page's status code, the rules the "
-                           "page violates and the rules axe could not decide, which need review, each with its "
-                           f"impact, WCAG tags and up to {MAX_ELEMENTS_PER_RULE} of the elements involved, and the "
-                           "ids of the rules that every element passed. The final URL is only given when the page redirected, "
-                           "and an error only when the page could not be checked.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the web page to check."
-                    }
-                },
-                "required": ["url"]
-            }
-        },
-        {
-            "name": "get_page_content",
-            "description": "Loads a web page in a headless browser and returns what a reader sees: its title, the "
-                           "lang attribute of the page, the start of its visible main text, its headings in order "
-                           "with the start of the text under each, "
-                           "its visible images and links, and the parts of the page that have their own lang "
-                           "attribute, with their text. Each image comes with its selector, src, alt text, "
-                           "the text of the link it is in and the text around it; each link with its selector, "
-                           "text, URL, aria-label and title attributes and the text around it. Both also give the "
-                           "heading of the section they are in. A passage in another language that is not listed "
-                           f"in parts has no lang attribute of its own. Up to {MAX_PAGE_ITEMS} images, links and "
-                           "parts are listed. Empty fields are left out: an image with no alt attribute has no alt field, "
-                           "while a decorative image has an empty one. The final URL is only given when the page "
-                           "redirected, and an error only when the page could not be loaded.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the web page to read."
-                    }
-                },
-                "required": ["url"]
-            }
-        },
-        {
-            "name": "submit_report",
-            "description": "Hand in the final report. Call this once, after you have finished investigating.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "narrative": {
-                        "type": "string",
-                        "description": "A 2-4 sentence summary of the page's accessibility. Only mention things the tools showed."
-                    },
-                    "assessments": {
-                        "type": "array",
-                        "description": "One entry per rule in run_axe's violations. Empty if there are none.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "rule": {"type": "string", "description": "The axe rule, exactly as run_axe returned it."},
-                                "note": {"type": "string", "description": "One or two sentences explaining the problem and who it affects."},
-                                "suggested_fix": {"type": "string", "description": "How to fix it, if you can tell."}
-                            },
-                            "required": ["rule", "note"]
-                        }
-                    },
-                    "reviews": {
-                        "type": "array",
-                        "description": "One entry per element in run_axe's needs_review. Empty if there are none.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "rule": {"type": "string", "description": "The axe rule, exactly as run_axe returned it."},
-                                "selector": {"type": "string", "description": "The element's selector, exactly as run_axe returned it."},
-                                "verdict": {"type": "string", "enum": ["pass", "fail", "manual-review"],
-                                            "description": "pass or fail if the tool results show which, otherwise manual-review."},
-                                "evidence": {"type": "string", "description": "What in the tool results supports the verdict, or what is missing to decide."},
-                                "note": {"type": "string", "description": "One or two sentences explaining the verdict."}
-                            },
-                            "required": ["rule", "selector", "verdict", "evidence", "note"]
-                        }
-                    },
-                    "agent_findings": {
-                        "type": "array",
-                        "description": "Problems you found with get_page_content that axe does not report. Empty if there are none.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "rule": {"type": "string", "enum": list(get_args(AgentRule)), "description": "The kind of problem."},
-                                "selector": {"type": "string", "description": "The element with the problem, exactly as get_page_content "
-                                                                              "returned it. Leave it out for the page title, or for a "
-                                                                              "problem with the page as a whole."},
-                                "evidence": {"type": "string", "description": "What in the tool results shows the problem, e.g. the alt "
-                                                                              "text, or a link's text and its context."},
-                                "note": {"type": "string", "description": "One or two sentences explaining the problem and who it affects."},
-                                "suggested_fix": {"type": "string", "description": "How to fix it, if you can tell."}
-                            },
-                            "required": ["rule", "evidence", "note"]
-                        }
-                    }
-                },
-                "required": ["narrative", "assessments", "reviews", "agent_findings"]
-            }
-        }
-    ]
 
     system_prompt = """
         You are a web accessibility analyzer. Your goal is to find the accessibility problems on the page the user
@@ -489,9 +409,6 @@ def main():
         assessments, your decisions on needs_review items in reviews, and the problems you found in agent_findings.
     """
 
-    chat = make_chat(args, system_prompt, tools)
-    chat.add_user_message(f"Check the accessibility of {args.url}")
-
     # What the tools found, filled in during the run: the latest successful result of each
     axe = None
     content = None
@@ -505,13 +422,31 @@ def main():
             content = tool_result["content"]
         return for_model(tool_name, tool_result)
 
+    def run_axe_tool(url: str):
+        """
+        Args:
+            url: The URL of the web page to check.
+        """
+        return run_tool("run_axe", {"url": url})
+
+    def get_page_content_tool(url: str):
+        """
+        Args:
+            url: The URL of the web page to read.
+        """
+        return run_tool("get_page_content", {"url": url})
+
+    tools = [Tool(run_axe_tool, name="run_axe", description=RUN_AXE),
+             Tool(get_page_content_tool, name="get_page_content", description=GET_PAGE_CONTENT)]
+
     def review(report):
         *_, unverified = check_report(report, axe, content)
         return unverified
 
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
-    submitted, usage = run_agent(chat, run_tool, SubmitReport, review, unbacked_message)
+    submitted, usage = run_agent(args, system_prompt, f"Check the accessibility of {args.url}", tools, SubmitReport,
+                                 review, unbacked_message)
 
     if axe is not None:
         save_axe(axe, args)
@@ -523,7 +458,7 @@ def main():
     findings = ((axe_report_findings(axe, assessments, reviews) if axe is not None else [])
                 + [agent_report_finding(f) for f in agent_findings])
     report = Report(
-        **report_fields(args, chat, started_at, start, usage),
+        **report_fields(args, started_at, start, usage),
         counts=dict(Counter(f.severity for f in findings)),
         narrative=submitted.narrative,
         rejected_submissions=usage["rejected_submissions"],
@@ -533,7 +468,7 @@ def main():
         findings=findings,
         unverified=unverified,
     )
-    path = report_path("accessibility", chat.model, args)
+    path = report_path("accessibility", args)
     path.write_text(report.model_dump_json(indent=2))
     print(f"=====Report saved to {path}=====")
 

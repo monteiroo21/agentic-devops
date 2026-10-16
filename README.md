@@ -2,7 +2,8 @@
 
 Two analyzers that check a web page by pairing a static tool with a language model. The static tool finds
 what it can measure. The model then looks for the problems the tool can't see. Both analyzers can run on
-Google's Gemini API or on a local model through Ollama.
+Google's Gemini API or on a local model through Ollama, and talk to the model through
+[Pydantic AI](https://ai.pydantic.dev/).
 
 ## What the analyzers do
 
@@ -63,7 +64,7 @@ There are two versions:
 
 The workflow versions are meant for small local models, which struggle to drive a long tool-calling loop.
 Both versions of each analyzer share their command-line flags, agent loop and report format through
-`common.py`.
+`common.py`. `chat_backends.py` sets up the Gemini and Ollama models.
 
 ## Models
 
@@ -103,10 +104,19 @@ GEMINI_API_KEY=your-api-key
 
    For other systems, see [ollama.com/download](https://ollama.com/download).
 
-2. Start the server, unless it's already running as a service (`ollama list` tells you):
+2. Start the server with a 32,768-token context window, unless it's already running as a service
+   (`ollama list` tells you):
 
    ```bash
-   ollama serve
+   OLLAMA_CONTEXT_LENGTH=32768 ollama serve
+   ```
+
+   If it runs as a systemd service, set the context window there instead: run `sudo systemctl edit ollama`,
+   add the lines below, and restart it with `sudo systemctl restart ollama`.
+
+   ```
+   [Service]
+   Environment="OLLAMA_CONTEXT_LENGTH=32768"
    ```
 
 3. Download the model:
@@ -115,8 +125,9 @@ GEMINI_API_KEY=your-api-key
    ollama pull qwen3:4b-instruct
    ```
 
-The analyzers connect to Ollama at `http://localhost:11434`, with a 32,768-token context window.
-`qwen3:4b-instruct` has no thinking mode, so run it with `--no-think`.
+The analyzers connect to Ollama's OpenAI-compatible API at `http://localhost:11434/v1`. That API can't set
+the context window per request, which is why the server sets it. Without it, Ollama uses 4,096 tokens and
+cuts longer prompts. `qwen3:4b-instruct` has no thinking mode, so run it with `--no-think`.
 
 ## Running the test server
 

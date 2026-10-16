@@ -1,0 +1,12 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_CONTEXT_LENGTH=32768
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

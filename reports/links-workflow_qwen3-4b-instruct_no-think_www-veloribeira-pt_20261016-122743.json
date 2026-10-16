@@ -1,0 +1,852 @@
+{
+  "mode": "workflow",
+  "target": "http://www.veloribeira.pt/",
+  "model": "qwen3:4b-instruct",
+  "thinking": false,
+  "started_at": "2026-10-16T11:14:47.705161+00:00",
+  "duration_s": 776.1,
+  "llm_requests": 9,
+  "input_tokens": 10525,
+  "output_tokens": 4132,
+  "truncated_replies": 0,
+  "counts": {
+    "error": 7,
+    "info": 5,
+    "warning": 11
+  },
+  "invalid_replies": 0,
+  "batch_size": 8,
+  "criteria": {
+    "soft-404": {
+      "elements": 27,
+      "pass": 24,
+      "omitted_first": 0,
+      "fail": 3
+    },
+    "redirect": {
+      "elements": 5,
+      "pass": 1,
+      "omitted_first": 0,
+      "fail": 4
+    },
+    "text-mismatch": {
+      "elements": 22,
+      "pass": 18,
+      "omitted_first": 0,
+      "fail": 4
+    }
+  },
+  "link_checks": {
+    "ok": 37,
+    "broken": 6,
+    "redirect": 5,
+    "unreachable": 1
+  },
+  "links_found": 49,
+  "links_checked": 49,
+  "pages_read": 27,
+  "findings": [
+    {
+      "rule": "broken-resource",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/static/css/print.css",
+      "tag": "link",
+      "text": null,
+      "status": 404,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 404 error for a CSS file indicates a missing resource. This is likely an accidental omission rather than a deliberate test page, as CSS files are typically not standalone landing pages.",
+      "likely_intentional": false,
+      "suggested_fix": "Verify that the CSS file exists in the correct path and correct the path in the HTML if needed, or remove the link if it's no longer used."
+    },
+    {
+      "rule": "redirect",
+      "severity": "info",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/tours",
+      "tag": "a",
+      "text": "Tours",
+      "status": 200,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "redirect",
+      "severity": "info",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/account/orders",
+      "tag": "a",
+      "text": "My orders",
+      "status": 200,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "unreachable",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/booking",
+      "tag": "a",
+      "text": "Book online",
+      "status": null,
+      "error": "timeout",
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 'timeout' error for the booking page suggests a server or network issue, not a deliberate test page. The page likely exists but is unreachable due to a configuration or service problem.",
+      "likely_intentional": false,
+      "suggested_fix": "Check the server status, review the booking endpoint, and ensure the service is running and accessible."
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/promo/end-of-season",
+      "tag": "a",
+      "text": "Shop the sale",
+      "status": null,
+      "error": "too many redirects",
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 'too many redirects' error suggests a faulty redirect chain, possibly due to misconfigured URLs or server settings, not a deliberate test page.",
+      "likely_intentional": false,
+      "suggested_fix": "Investigate the redirect rules and ensure the URL path is correctly configured; eliminate invalid redirect loops."
+    },
+    {
+      "rule": "broken-resource",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/static/img/products/gravel-x2.jpg",
+      "tag": "img",
+      "text": null,
+      "status": 404,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": "The 404 for an image file indicates the image has been removed or is misreferenced. This is likely an accident, not a deliberate demonstration of a 404.",
+      "likely_intentional": false,
+      "suggested_fix": "Verify if the image exists in the correct folder and update the image path in the HTML if necessary."
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/tours/geres-weekend",
+      "tag": "a",
+      "text": "Gerês national park weekend 2 days · 95 km · challenging",
+      "status": 500,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": "A 500 Server Error on a tour page indicates a backend issue, such as a script crash or database failure, not a deliberate test page.",
+      "likely_intentional": false,
+      "suggested_fix": "Check server logs and application errors to identify the root cause and fix the backend logic."
+    },
+    {
+      "rule": "redirect",
+      "severity": "info",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/tours/aveiro-lagoon",
+      "tag": "a",
+      "text": "Aveiro lagoon and salt pans Full day · 40 km · easy",
+      "status": 200,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "redirect",
+      "severity": "info",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/news/spring-service-special",
+      "tag": "a",
+      "text": "See this season's service prices",
+      "status": 200,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/blog/winter-storage-tips",
+      "tag": "a",
+      "text": "Five tips for storing your bike over winter",
+      "status": 404,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": "A 404 for a blog post implies the article is missing or has been deleted. This is likely an accidental error rather than a deliberate test page.",
+      "likely_intentional": false,
+      "suggested_fix": "Restore the blog post or redirect to a similar content page if available."
+    },
+    {
+      "rule": "redirect",
+      "severity": "info",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/downloads/size-guide.pdf",
+      "tag": "a",
+      "text": "Size guide (PDF)",
+      "status": 200,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "broken-link",
+      "severity": "error",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/gift-cards",
+      "tag": "a",
+      "text": "Gift cards",
+      "status": 500,
+      "error": null,
+      "source": "checker",
+      "verdict": null,
+      "evidence": null,
+      "note": "A 500 error on a gift cards page suggests a backend error, not a deliberate demonstration. The page may have crashed or an application error occurred.",
+      "likely_intentional": false,
+      "suggested_fix": "Review server logs and the processing logic for gift cards to resolve the 500 error."
+    },
+    {
+      "rule": "soft-404",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/products/kids-explorer-20",
+      "tag": "a",
+      "text": "Explorer 20 kids' bike €329",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The page says 'that bike has rolled off' and 'may have sold out, or the link may be out of date'. This indicates the product is no longer available, which is a sign of an error or unavailability.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "soft-404",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/products/cargo-duo",
+      "tag": "a",
+      "text": "Cargo Duo e-bike €3,450",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The page states 'This product is no longer available' and offers a suggestion to contact for alternatives. This clearly shows the product is no longer sold or available.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "soft-404",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.douroride.pt/passeios/vale-do-douro",
+      "tag": "a",
+      "text": "Douro Valley wine ride",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The page says 'Oops… este passeio já não está disponível' which translates to 'Oops… this tour is no longer available'. This indicates the tour is not available, which is a failure condition.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "redirect-to-login",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/account/orders",
+      "tag": "a",
+      "text": "My orders",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link promises 'My orders', but redirects to a login page titled 'Sign in' and headed 'Sign in', not the orders page. It ends on a login page, not the item named in the link.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "other",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/tours/aveiro-lagoon",
+      "tag": "a",
+      "text": "Aveiro lagoon and salt pans Full day · 40 km · easy",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link promotes a specific tour ('Aveiro lagoon and salt pans...') but redirects to the general '/tours/' page, which is a list of tours, not the specific tour. The final page is not the item named in the link.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "redirect-to-homepage",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/news/spring-service-special",
+      "tag": "a",
+      "text": "See this season's service prices",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link promotes 'See this season's service prices', but redirects to the homepage titled 'Velo Ribeira | Bike rentals, tours and shop in Porto' with heading 'See Porto by bike'. The final page is not the item promised.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "redirect-to-login",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/downloads/size-guide.pdf",
+      "tag": "a",
+      "text": "Size guide (PDF)",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link promotes 'Size guide (PDF)', but redirects to a login page titled 'Sign in' and headed 'Sign in', not the PDF download. It ends on a login page, not the item named.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "text-mismatch",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/events",
+      "tag": "a",
+      "text": "Events",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link text 'Events' does not match the page title 'Velo Ribeira' or heading, which are generic and lack reference to events. However, the page content may still relate to events, but there's no indication of event content. Still, the text 'Events' implies a section about events, and the destination is titled 'Velo Ribeira', which is vague. This is a weak mismatch, but since the destination title does not clearly indicate events, it is a failure.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "text-mismatch",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/products/trail-5-hardtail",
+      "tag": "a",
+      "text": "Folding City 16 €899",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link text is 'Folding City 16 €899', but the destination page is for 'Trail 5 hardtail', which is a mismatch in product name.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "text-mismatch",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/tours/calendar",
+      "tag": "a",
+      "text": "2026 tour calendar",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link text is '2026 tour calendar', but the heading is 'Tour calendar 2023', which is a clear mismatch in year and content.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    },
+    {
+      "rule": "text-mismatch",
+      "severity": "warning",
+      "page": "http://www.veloribeira.pt/",
+      "url": "http://www.veloribeira.pt/help/warranty",
+      "tag": "a",
+      "text": "Returns & refunds",
+      "status": 200,
+      "error": null,
+      "source": "model",
+      "verdict": "fail",
+      "evidence": "The link text is 'Returns & refunds', but the page is about 'Warranty and repairs', which is a different topic. The destination does not match the text.",
+      "note": null,
+      "likely_intentional": null,
+      "suggested_fix": null
+    }
+  ],
+  "verdicts": [
+    {
+      "criterion": "soft-404",
+      "id": "page-1",
+      "url": "http://www.veloribeira.pt/rentals/",
+      "verdict": "pass",
+      "reason": "The page shows real content about bike rentals, including pricing and how to book, with no error or 'page not found' message.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-2",
+      "url": "http://www.veloribeira.pt/tours/",
+      "verdict": "pass",
+      "reason": "The page presents real content about guided bike tours, including route details and pricing, with no error or disappearance notice.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-3",
+      "url": "http://www.veloribeira.pt/shop/",
+      "verdict": "pass",
+      "reason": "The page displays real product listings and shop details, including prices and availability, with no error message or 'no longer available' notice.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-4",
+      "url": "http://www.veloribeira.pt/events",
+      "verdict": "pass",
+      "reason": "The page says 'Redirecting… If nothing happens, go to the homepage', which indicates a redirect is in progress but does not present an error or show a non-existent page. It does not say the page is missing or unavailable.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-5",
+      "url": "http://www.veloribeira.pt/blog/",
+      "verdict": "pass",
+      "reason": "The page lists blog posts with dates and titles, showing real content, and no error or disappearance message.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-6",
+      "url": "http://www.veloribeira.pt/contact",
+      "verdict": "pass",
+      "reason": "The page contains real contact information, hours, and email addresses, with no error or 'not available' statement.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-7",
+      "url": "http://www.veloribeira.pt/login?next=%2Faccount%2Forders",
+      "verdict": "pass",
+      "reason": "The page is a login form with instructions and a note about account creation, showing real functionality, not an error or missing content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-8",
+      "url": "http://www.veloribeira.pt/cart",
+      "verdict": "pass",
+      "reason": "The page states 'Your basket is empty' and includes a 'Continue shopping' option, which is a normal, expected state of a shopping cart, not an error page or indication that content is missing.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-9",
+      "url": "http://www.veloribeira.pt/products/velo-urban-3",
+      "verdict": "pass",
+      "reason": "The page shows real content about the Velo Urban 3 bike with specifications and stock status. No error or disappearance message is present.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-10",
+      "url": "http://www.veloribeira.pt/products/gravel-x2",
+      "verdict": "pass",
+      "reason": "The page shows real content about the Gravel X2 bike with specifications and stock status. No error or disappearance message is present.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-11",
+      "url": "http://www.veloribeira.pt/products/trail-5-hardtail",
+      "verdict": "pass",
+      "reason": "The page shows real content about the Trail 5 hardtail bike with specifications and stock status. No error or disappearance message is present.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-12",
+      "url": "http://www.veloribeira.pt/products/kids-explorer-20",
+      "verdict": "fail",
+      "reason": "The page says 'that bike has rolled off' and 'may have sold out, or the link may be out of date'. This indicates the product is no longer available, which is a sign of an error or unavailability.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-13",
+      "url": "http://www.veloribeira.pt/products/cargo-duo",
+      "verdict": "fail",
+      "reason": "The page states 'This product is no longer available' and offers a suggestion to contact for alternatives. This clearly shows the product is no longer sold or available.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-14",
+      "url": "http://www.veloribeira.pt/products/commuter-helmet",
+      "verdict": "pass",
+      "reason": "The page shows real content about the helmet with specifications and stock status ('Out of stock'). It does not say 'page not found' or 'no longer available'—only that it's out of stock, which is a normal stock status, not a failure.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-15",
+      "url": "http://www.veloribeira.pt/tours/coastal-ride-vila-do-conde",
+      "verdict": "pass",
+      "reason": "The page shows real content about a tour with full details, including route, duration, price, and booking options. No error or unavailability message is present.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-16",
+      "url": "http://www.douroride.pt/passeios/vale-do-douro",
+      "verdict": "fail",
+      "reason": "The page says 'Oops… este passeio já não está disponível' which translates to 'Oops… this tour is no longer available'. This indicates the tour is not available, which is a failure condition.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-17",
+      "url": "http://www.veloribeira.pt/tours/calendar",
+      "verdict": "pass",
+      "reason": "The page shows a real tour calendar with actual scheduled dates and details, indicating real content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-18",
+      "url": "http://www.veloribeira.pt/",
+      "verdict": "pass",
+      "reason": "The page displays real content about bike rentals, tours, and shop offerings with prices and features.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-19",
+      "url": "http://www.veloribeira.pt/blog/douro-valley-3-day-itinerary",
+      "verdict": "pass",
+      "reason": "The blog post is about a 3-day itinerary in the Douro Valley, with real content and details, though the date (2026) is in the future, which is not an error or indication of being no longer available.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-20",
+      "url": "http://www.veloribeira.pt/blog/bike-stolen-what-to-do",
+      "verdict": "pass",
+      "reason": "The article provides clear, actionable steps for what to do if a bike is stolen, with specific instructions and a reference to official reporting systems, showing real content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-21",
+      "url": "http://www.veloribeira.pt/help/shipping-and-delivery",
+      "verdict": "pass",
+      "reason": "The page contains real and detailed information about shipping and delivery, including costs and delivery times, indicating real content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-22",
+      "url": "http://www.veloribeira.pt/help/warranty",
+      "verdict": "pass",
+      "reason": "The page provides real details about warranty coverage, repairs, and service, with clear and actionable information.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-23",
+      "url": "http://www.veloribeira.pt/login?next=%2Fdownloads%2Fsize-guide.pdf",
+      "verdict": "pass",
+      "reason": "The page is a login form, which is a normal part of a site and shows real content (a sign-in interface), though it is not publicly visible content. However, it is not an error page or a 'page not found' type message. It is a legitimate interface, not a dead or missing page.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-24",
+      "url": "http://www.veloribeira.pt/about",
+      "verdict": "pass",
+      "reason": "The page contains real content about the business's origins, team, and operations with details about opening time and activities, indicating real content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-25",
+      "url": "http://www.veloribeira.pt/partners",
+      "verdict": "pass",
+      "reason": "The page shows real content about partners and routes, with specific details and links. There is no indication of an error or that the page is no longer available.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-26",
+      "url": "http://www.veloribeira.pt/careers",
+      "verdict": "pass",
+      "reason": "The page contains real content about job opportunities, including roles, responsibilities, and application instructions. No error message or indication that the page is missing or outdated.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "soft-404",
+      "id": "page-27",
+      "url": "http://www.veloribeira.pt/privacy",
+      "verdict": "pass",
+      "reason": "The page contains a clear and detailed privacy policy with specific information about data collection, retention, and user rights. No error or 'page not found' message is present.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "redirect",
+      "id": "redirect-1",
+      "url": "http://www.veloribeira.pt/tours",
+      "verdict": "pass",
+      "reason": "The link promotes 'Tours' and redirects to 'http://www.veloribeira.pt/tours/', which is a page titled 'Guided bike tours from Porto | Velo Ribeira' and headed 'Guided bike tours from Porto'. This matches the promise of the link.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "redirect",
+      "id": "redirect-2",
+      "url": "http://www.veloribeira.pt/account/orders",
+      "verdict": "fail",
+      "reason": "The link promises 'My orders', but redirects to a login page titled 'Sign in' and headed 'Sign in', not the orders page. It ends on a login page, not the item named in the link.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "redirect",
+      "id": "redirect-3",
+      "url": "http://www.veloribeira.pt/tours/aveiro-lagoon",
+      "verdict": "fail",
+      "reason": "The link promotes a specific tour ('Aveiro lagoon and salt pans...') but redirects to the general '/tours/' page, which is a list of tours, not the specific tour. The final page is not the item named in the link.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "redirect",
+      "id": "redirect-4",
+      "url": "http://www.veloribeira.pt/news/spring-service-special",
+      "verdict": "fail",
+      "reason": "The link promotes 'See this season's service prices', but redirects to the homepage titled 'Velo Ribeira | Bike rentals, tours and shop in Porto' with heading 'See Porto by bike'. The final page is not the item promised.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "redirect",
+      "id": "redirect-5",
+      "url": "http://www.veloribeira.pt/downloads/size-guide.pdf",
+      "verdict": "fail",
+      "reason": "The link promotes 'Size guide (PDF)', but redirects to a login page titled 'Sign in' and headed 'Sign in', not the PDF download. It ends on a login page, not the item named.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-1",
+      "url": "http://www.veloribeira.pt/rentals/",
+      "verdict": "pass",
+      "reason": "The link text 'Rentals' matches the page title 'Bike rentals in Porto | Velo Ribeira' and heading 'Bike rentals in Porto'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-2",
+      "url": "http://www.veloribeira.pt/tours",
+      "verdict": "pass",
+      "reason": "The link text 'Tours' matches the page title 'Guided bike tours from Porto | Velo Ribeira' and heading 'Guided bike tours from Porto'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-3",
+      "url": "http://www.veloribeira.pt/shop/",
+      "verdict": "pass",
+      "reason": "The link text 'Shop' matches the page title 'Shop bikes and gear | Velo Ribeira' and heading 'Shop bikes and gear'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-4",
+      "url": "http://www.veloribeira.pt/events",
+      "verdict": "fail",
+      "reason": "The link text 'Events' does not match the page title 'Velo Ribeira' or heading, which are generic and lack reference to events. However, the page content may still relate to events, but there's no indication of event content. Still, the text 'Events' implies a section about events, and the destination is titled 'Velo Ribeira', which is vague. This is a weak mismatch, but since the destination title does not clearly indicate events, it is a failure.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-5",
+      "url": "http://www.veloribeira.pt/blog/",
+      "verdict": "pass",
+      "reason": "The link text 'Blog' matches the page title 'Blog | Velo Ribeira' and heading 'Blog'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-6",
+      "url": "http://www.veloribeira.pt/contact",
+      "verdict": "pass",
+      "reason": "The link text 'Contact' matches the page title 'Contact us | Velo Ribeira' and heading 'Contact us'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-7",
+      "url": "http://www.veloribeira.pt/cart",
+      "verdict": "pass",
+      "reason": "The link text 'Basket (0)' matches the page title 'Your basket | Velo Ribeira' and heading 'Your basket'. The text clearly refers to a basket, and the destination matches. Despite the (0), it still refers to a basket.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-8",
+      "url": "http://www.veloribeira.pt/tours/",
+      "verdict": "pass",
+      "reason": "The link text 'Explore our tours' does not match the destination, which is about 'Guided bike tours from Porto' — it is a more specific page, but the link's text is more general. However, 'Explore our tours' suggests navigation to a tours page, and the destination is a tours page. The link text is not a literal name of the page, but it reasonably implies the content. Since it leads to a tours page, and the text refers to tours, it is a reasonable match. No clear mismatch.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-9",
+      "url": "http://www.veloribeira.pt/products/velo-urban-3",
+      "verdict": "pass",
+      "reason": "The link text 'Velo Urban 3 €749' matches the product name in the title and heading 'Velo Urban 3'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-10",
+      "url": "http://www.veloribeira.pt/products/gravel-x2",
+      "verdict": "pass",
+      "reason": "The link text 'Gravel X2 €1,890' matches the product name in the title and heading 'Gravel X2'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-11",
+      "url": "http://www.veloribeira.pt/products/trail-5-hardtail",
+      "verdict": "fail",
+      "reason": "The link text is 'Folding City 16 €899', but the destination page is for 'Trail 5 hardtail', which is a mismatch in product name.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-12",
+      "url": "http://www.veloribeira.pt/products/commuter-helmet",
+      "verdict": "pass",
+      "reason": "The link text 'Commuter helmet with MIPS €59' matches the product name in the title and heading 'Commuter helmet with MIPS'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-13",
+      "url": "http://www.veloribeira.pt/tours/coastal-ride-vila-do-conde",
+      "verdict": "pass",
+      "reason": "The link text 'Coastal ride to Vila do Conde Full day · 52 km · easy' matches the title and heading 'Coastal ride to Vila do Conde'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-14",
+      "url": "http://www.veloribeira.pt/tours/calendar",
+      "verdict": "fail",
+      "reason": "The link text is '2026 tour calendar', but the heading is 'Tour calendar 2023', which is a clear mismatch in year and content.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-15",
+      "url": "http://www.veloribeira.pt/blog/douro-valley-3-day-itinerary",
+      "verdict": "pass",
+      "reason": "The link text 'Riding the Douro Valley: a 3-day itinerary' matches the title and heading exactly.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-16",
+      "url": "http://www.veloribeira.pt/blog/bike-stolen-what-to-do",
+      "verdict": "pass",
+      "reason": "The link text 'Bike stolen in Porto? What to do next' matches the title and heading exactly.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-17",
+      "url": "http://www.veloribeira.pt/help/shipping-and-delivery",
+      "verdict": "pass",
+      "reason": "The link text 'Shipping & delivery' matches both the URL path and the page title and heading.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-18",
+      "url": "http://www.veloribeira.pt/help/warranty",
+      "verdict": "fail",
+      "reason": "The link text is 'Returns & refunds', but the page is about 'Warranty and repairs', which is a different topic. The destination does not match the text.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-19",
+      "url": "http://www.veloribeira.pt/about",
+      "verdict": "pass",
+      "reason": "The link text 'About us' matches both the title and heading of the page.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-20",
+      "url": "http://www.veloribeira.pt/partners",
+      "verdict": "pass",
+      "reason": "The link text is 'Partners', but the page title and heading are 'Partners and friends', which adds extra text. The destination is related but not identical; however, 'Partners' is a subset of 'Partners and friends', and the intent is likely consistent. This is a minor mismatch but not a clear failure.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-21",
+      "url": "http://www.veloribeira.pt/careers",
+      "verdict": "pass",
+      "reason": "The link text 'Careers' matches exactly with the title and heading 'Careers'.",
+      "omitted_first": false
+    },
+    {
+      "criterion": "text-mismatch",
+      "id": "link-22",
+      "url": "http://www.veloribeira.pt/privacy",
+      "verdict": "pass",
+      "reason": "The link text 'Privacy policy' matches exactly with the title and heading 'Privacy policy'.",
+      "omitted_first": false
+    }
+  ]
+}

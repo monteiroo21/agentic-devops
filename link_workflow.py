@@ -6,7 +6,7 @@ from typing import ClassVar
 from urllib.parse import urlparse
 from pydantic import BaseModel
 from common import (VERDICT_SEVERITY, Answers, Verdict, WorkflowReport, add_task, answers_schema, ask_tasks,
-                    criteria_counts, make_chat, make_parser, parse_args, report_fields, report_path, with_ids)
+                    criteria_counts, make_judge, make_parser, parse_args, report_fields, report_path, with_ids)
 from link_analyzer import (Finding, build_findings, check_page_links, compact, ends_on_homepage, fetch_page_text,
                            link_for_model, record_result)
 
@@ -167,7 +167,7 @@ def build_report_findings(checks, link_info, elements, answers):
 def main():
     args = parse_args(make_parser("Find link problems on a web page, asking the model about one question and a few "
                                   "links at a time.", workflow=True))
-    chat = make_chat(args, SYSTEM_PROMPT, tools=[])
+    judge = make_judge(args, SYSTEM_PROMPT)
 
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
@@ -192,7 +192,7 @@ def main():
     def ask_about(criterion, instructions, entries, **options):
         tasks = []
         add_task(tasks, elements, criterion, instructions, entries, **options)
-        ask_tasks(chat, tasks, args.batch_size, usage, answers)
+        ask_tasks(judge, tasks, args.batch_size, usage, answers)
 
     # In this order: a link that fails one question is left out of the later ones
     ask_about("broken-links", BROKEN_LINKS, broken_entries(links), answer=LinkNote)
@@ -202,7 +202,7 @@ def main():
 
     findings, verdicts = build_report_findings(checks, link_info, elements, answers)
     report = LinkWorkflowReport(
-        **report_fields(args, chat, started_at, start, usage),
+        **report_fields(args, started_at, start, usage),
         counts=dict(Counter(finding.severity for finding in findings)),
         invalid_replies=usage["invalid_replies"],
         batch_size=args.batch_size,
@@ -214,7 +214,7 @@ def main():
         findings=findings,
         verdicts=verdicts,
     )
-    path = report_path("links-workflow", chat.model, args)
+    path = report_path("links-workflow", args)
     path.write_text(report.model_dump_json(indent=2))
     print(f"=====Report saved to {path}=====")
 

@@ -1,0 +1,88 @@
+{
+  "mode": "agent",
+  "target": "http://www.veloribeira.pt/",
+  "model": "gemini-3.1-flash-lite",
+  "thinking": true,
+  "started_at": "2026-10-16T11:31:16.287006+00:00",
+  "duration_s": 12.8,
+  "llm_requests": 2,
+  "input_tokens": 10154,
+  "output_tokens": 768,
+  "truncated_replies": 0,
+  "counts": {
+    "error": 2,
+    "needs-review": 2
+  },
+  "narrative": "The website generally has good structure with appropriate headings and alt text for images. However, it fails on some color contrast requirements for buttons and links, impacting accessibility for users with visual impairments. There are also potential contrast issues with text overlaid on images that require further manual verification.",
+  "rejected_submissions": 0,
+  "unbacked_claims": 0,
+  "text_replies": 0,
+  "axe_version": "4.14.0",
+  "findings": [
+    {
+      "rule": "color-contrast",
+      "severity": "error",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": "a[href$=\"booking\"]",
+      "source": "axe",
+      "html": "<a class=\"button\" href=\"/booking\">Book online</a>",
+      "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.75 (foreground color: #ffffff, background color: #d4622f, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+      "verdict": null,
+      "evidence": null,
+      "note": "The \"Book online\" button has a contrast ratio of 3.75:1, which is below the 4.5:1 requirement for normal text and buttons. This makes it difficult for users with low vision to read the text.",
+      "suggested_fix": "Increase the contrast between the text color (#ffffff) and the button background color (#d4622f) by either darkening the background or lightening the text (though it's already white). Alternatively, use a darker color for the button background."
+    },
+    {
+      "rule": "link-in-text-block",
+      "severity": "error",
+      "wcag": [
+        "wcag2a",
+        "wcag141"
+      ],
+      "selector": "a[href$=\"privacy\"]",
+      "source": "axe",
+      "html": "<a href=\"/privacy\">Privacy policy</a>",
+      "summary": "Fix any of the following:\n  The link has insufficient color contrast of 1.47:1 with the surrounding text. (Minimum contrast is 3:1, link text: #ffffff, surrounding text: #cfd6d9)\n  The link has no styling (such as underline) to distinguish it from the surrounding text",
+      "verdict": null,
+      "evidence": null,
+      "note": "The \"Privacy policy\" link in the footer has a contrast ratio of only 1.47:1 against the surrounding text and lacks any visual distinction (like an underline) beyond color. This makes it hard for users with low vision or color blindness to identify it as a link.",
+      "suggested_fix": "Add an underline or another visual cue to distinguish the link from surrounding text, and increase the contrast ratio between the link text and its background to at least 4.5:1."
+    },
+    {
+      "rule": "color-contrast",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": "h1",
+      "source": "axe",
+      "html": "<h1>See Porto by bike</h1>",
+      "summary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node",
+      "verdict": "manual-review",
+      "evidence": "Element's background color could not be determined because element contains an image node",
+      "note": "The accessibility of text overlaid on a hero image could not be automatically verified. This requires manual check to ensure the contrast is sufficient regardless of the image content.",
+      "suggested_fix": null
+    },
+    {
+      "rule": "color-contrast",
+      "severity": "needs-review",
+      "wcag": [
+        "wcag2aa",
+        "wcag143"
+      ],
+      "selector": ".hero-text > p:nth-child(2)",
+      "source": "axe",
+      "html": "<p>Rentals, guided tours and a friendly workshop, two minutes from the Ribeira waterfront.</p>",
+      "summary": "Fix any of the following:\n  Element's background color could not be determined because element contains an image node",
+      "verdict": "manual-review",
+      "evidence": "Element's background color could not be determined because element contains an image node",
+      "note": "The accessibility of text overlaid on a hero image could not be automatically verified. This requires manual check to ensure the contrast is sufficient regardless of the image content.",
+      "suggested_fix": null
+    }
+  ],
+  "unverified": []
+}

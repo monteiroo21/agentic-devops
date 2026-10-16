@@ -7,7 +7,7 @@ from accessibility_analyzer import (MAX_TEXT_CHARS, WCAG_FOR_RULE, Finding, axe_
                                     get_page_content, item_for_model, make_axe_parser, run_axe, save_axe,
                                     wcag_tags)
 from common import (VERDICT_SEVERITY, Answers, Note, WorkflowReport, add_task, ask_tasks, criteria_counts,
-                    make_chat, parse_args, report_fields, report_path, with_ids, without)
+                    make_judge, parse_args, report_fields, report_path, with_ids, without)
 
 SYSTEM_PROMPT = """
     You are a web accessibility reviewer. You judge one WCAG 2.2 criterion at a time for a few elements of a web
@@ -190,7 +190,7 @@ def build_findings(axe, elements, answers, omitted):
 def main():
     args = parse_args(make_axe_parser("Find accessibility problems on a web page, asking the model about one "
                                       "criterion and a few elements at a time.", workflow=True))
-    chat = make_chat(args, SYSTEM_PROMPT, tools=[])
+    judge = make_judge(args, SYSTEM_PROMPT)
 
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
@@ -209,11 +209,11 @@ def main():
     tasks, elements = build_tasks(axe, content)
     usage = Counter()
     answers = Answers()
-    ask_tasks(chat, tasks, args.batch_size, usage, answers)
+    ask_tasks(judge, tasks, args.batch_size, usage, answers)
 
     findings, verdicts = build_findings(axe, elements, answers.by_id, answers.omitted)
     report = AccessibilityWorkflowReport(
-        **report_fields(args, chat, started_at, start, usage),
+        **report_fields(args, started_at, start, usage),
         counts=dict(Counter(finding.severity for finding in findings)),
         invalid_replies=usage["invalid_replies"],
         batch_size=args.batch_size,
@@ -222,7 +222,7 @@ def main():
         findings=findings,
         verdicts=verdicts,
     )
-    path = report_path("accessibility-workflow", chat.model, args)
+    path = report_path("accessibility-workflow", args)
     path.write_text(report.model_dump_json(indent=2))
     print(f"=====Report saved to {path}=====")
 

@@ -1,14 +1,14 @@
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Literal, get_args
+from typing import Literal
 from urllib.parse import urldefrag, urlparse
 import httpx
 import lxml.html
 from bs4 import BeautifulSoup
-from pydantic import BaseModel
-from common import (AgentReport, make_chat, make_parser, parse_args, report_fields, report_path, run_agent,
-                    split_backed)
+from pydantic import BaseModel, Field
+from pydantic_ai import Tool
+from common import AgentReport, make_parser, parse_args, report_fields, report_path, run_agent, split_backed
 
 client = httpx.Client(
     follow_redirects=True,
@@ -21,24 +21,33 @@ MAX_PAGE_BYTES = 512 * 1024  # enough for the title and first heading of almost 
 MAX_PAGE_TEXT_CHARS = 2000
 
 class Assessment(BaseModel):
-    url: str
-    likely_intentional: bool
-    note: str
-    suggested_fix: str | None = None
+    url: str = Field(description="The link this comment is about.")
+    likely_intentional: bool = Field(
+        description="True if the problem looks deliberate, e.g. a test page that demonstrates a 404.")
+    note: str = Field(description="One or two sentences explaining the problem.")
+    suggested_fix: str | None = Field(
+        None, description="How to fix it, if you can tell. Leave this out if no fix is needed.")
 
 AgentRule = Literal["soft-404", "redirect-to-homepage", "redirect-to-login", "text-mismatch", "other"]
 NEEDS_PAGE_TEXT = {"soft-404", "text-mismatch", "other"}
 
 class AgentFinding(BaseModel):
-    url: str
-    rule: AgentRule
-    evidence: str
-    note: str
+    url: str = Field(description="The link with the problem, exactly as the tools returned it.")
+    rule: AgentRule = Field(description="The kind of problem.")
+    evidence: str = Field(
+        description="What in the tool results shows the problem, e.g. the page title or the final URL.")
+    note: str = Field(description="One or two sentences explaining the problem.")
 
 class SubmitReport(BaseModel):
-    narrative: str
-    assessments: list[Assessment]
-    agent_findings: list[AgentFinding] = []
+    """Hand in the final report. Call this once, after you have finished investigating."""
+    narrative: str = Field(
+        description="A 2-4 sentence summary of the page's link health. Only mention things the tools checked.")
+    assessments: list[Assessment] = Field(
+        description="One entry per broken, blocked or unreachable link. Empty if there are none.")
+    agent_findings: list[AgentFinding] = Field(
+        [], description="Problems you found that the status code does not show, e.g. a page that returns 200 but is "
+                        "an error page, a redirect to the homepage or a login page, or link text that does not match "
+                        "the page it leads to. Empty if there are none.")
 
 class RejectedClaim(AgentFinding):
     reason: Literal["not-read", "not-homepage-redirect", "no-tool-result"]
@@ -319,9 +328,9 @@ def assessment_problem(assessment, checks):
     check = checks.get(assessment.url)
     if check is None:
         return "no tool result shows this URL"
-    if check["verdict"] in ("ok", "redirect"):
-        return ("the tools show this link works, so it needs no assessment; if it has a problem the status code "
-                "does not show, put it in agent_findings")
+    if check["verdict"] == "ok":
+        return (f"this link answered with status {check['status']} and no redirect, so the checker reported nothing "
+                "for it to assess; if its page has a problem the status code does not show, put it in agent_findings")
     return None
 
 def finding_problem(agent_finding, checks, fetched):
@@ -399,123 +408,6 @@ def rejection_outcomes(rejections, final_findings, checks, fetched):
 def main():
     args = parse_args(make_parser("Find link problems on a web page."))
 
-    tools = [
-        {
-            "name": "check_url",
-            "description": "Checks whether a single URL works and returns its status code, final URL, "
-                            "redirect chain, content type and any connection error, and for an HTML page "
-                            "its title and first heading. Empty fields are left out, and the final URL is "
-                            "only given when it differs from the URL.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL to check."
-                    }
-                },
-                "required": ["url"]
-            }
-        },
-        {
-            "name": "check_page_links",
-            "description": "Finds every link on a web page and checks all of them. Returns each link's text, tag "
-                           "and whether it is internal or external, with its status code, final URL, "
-                           "redirect chain, content type and any connection error, and for a link to an HTML page "
-                           "that page's title and first heading. Empty fields are left out, and the final URL is "
-                           "only given when it differs from the link's URL.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the web page whose links to check."
-                    }
-                },
-                "required": ["url"]
-            }
-        },
-        {
-            "name": "check_urls",
-            "description": "Checks whether multiple URLs work and returns their status code, final URL, "
-                            "redirect chain, content type and any connection error, and for HTML pages "
-                            "their title and first heading. Empty fields are left out, and the final URL is "
-                            "only given when it differs from the URL.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "urls": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "description": "The URLs to check."
-                    }
-                },
-                "required": ["urls"]
-            }
-        },
-        {
-            "name": "fetch_page_text",
-            "description": "Fetches the title, first heading and a short snippet of visible text from a web page. "
-                           "Empty fields are left out, and the final URL is only given when the page redirected.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the web page to fetch text from."
-                    }
-                },
-                "required": ["url"]
-            }
-        },
-        {
-            "name": "submit_report",
-            "description": "Hand in the final report. Call this once, after you have finished investigating.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "narrative": {
-                        "type": "string",
-                        "description": "A 2-4 sentence summary of the page's link health. Only mention things the tools checked."
-                    },
-                    "assessments": {
-                        "type": "array",
-                        "description": "One entry per broken, blocked or unreachable link. Empty if there are none.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "url": {"type": "string", "description": "The link this comment is about."},
-                                "likely_intentional": {"type": "boolean", "description": "True if the problem looks deliberate, e.g. a test page that demonstrates a 404."},
-                                "note": {"type": "string", "description": "One or two sentences explaining the problem."},
-                                "suggested_fix": {"type": "string", "description": "How to fix it, if you can tell. Leave this out if no fix is needed."}
-                            },
-                            "required": ["url", "likely_intentional", "note"]
-                        }
-                    },
-                    "agent_findings": {
-                        "type": "array",
-                        "description": "Problems you found that the status code does not show, e.g. a page that returns 200 "
-                                       "but is an error page, a redirect to the homepage or a login page, or link text that "
-                                       "does not match the page it leads to. Empty if there are none.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "url": {"type": "string", "description": "The link with the problem, exactly as the tools returned it."},
-                                "rule": {"type": "string", "enum": list(get_args(AgentRule)), "description": "The kind of problem."},
-                                "evidence": {"type": "string", "description": "What in the tool results shows the problem, e.g. the page title or the final URL."},
-                                "note": {"type": "string", "description": "One or two sentences explaining the problem."}
-                            },
-                            "required": ["url", "rule", "evidence", "note"]
-                        }
-                    }
-                },
-                "required": ["narrative", "assessments", "agent_findings"]
-            }
-        }
-    ]
-
     system_prompt = """
         You are a web link analyzer. Your goal is to find every link problem on the page the user gives you,
         including problems that the status code alone does not reveal.
@@ -538,9 +430,6 @@ def main():
         Only report what the tools showed you. You do not check accessibility, so do not comment on it.
     """
 
-    chat = make_chat(args, system_prompt, tools)
-    chat.add_user_message(f"Check the links on {args.url}")
-
     # What the tools found, filled in during the run
     link_info = {}
     checks = {}
@@ -551,6 +440,49 @@ def main():
         tool_result = process_tool(tool_name, tool_input)
         record_result(tool_name, tool_result, link_info, checks, fetched)
         return for_model(tool_name, tool_result)
+
+    def check_url_tool(url: str):
+        """Checks whether a single URL works and returns its status code, final URL, redirect chain, content type and
+        any connection error, and for an HTML page its title and first heading. Empty fields are left out, and the
+        final URL is only given when it differs from the URL.
+
+        Args:
+            url: The URL to check.
+        """
+        return run_tool("check_url", {"url": url})
+
+    def check_page_links_tool(url: str):
+        """Finds every link on a web page and checks all of them. Returns each link's text, tag and whether it is
+        internal or external, with its status code, final URL, redirect chain, content type and any connection
+        error, and for a link to an HTML page that page's title and first heading. Empty fields are left out, and the
+        final URL is only given when it differs from the link's URL.
+
+        Args:
+            url: The URL of the web page whose links to check.
+        """
+        return run_tool("check_page_links", {"url": url})
+
+    def check_urls_tool(urls: list[str]):
+        """Checks whether multiple URLs work and returns their status code, final URL, redirect chain, content type
+        and any connection error, and for HTML pages their title and first heading. Empty fields are left out, and
+        the final URL is only given when it differs from the URL.
+
+        Args:
+            urls: The URLs to check.
+        """
+        return run_tool("check_urls", {"urls": urls})
+
+    def fetch_page_text_tool(url: str):
+        """Fetches the title, first heading and a short snippet of visible text from a web page. Empty fields are
+        left out, and the final URL is only given when the page redirected.
+
+        Args:
+            url: The URL of the web page to fetch text from.
+        """
+        return run_tool("fetch_page_text", {"url": url})
+
+    tools = [Tool(check_url_tool, name="check_url"), Tool(check_page_links_tool, name="check_page_links"),
+             Tool(check_urls_tool, name="check_urls"), Tool(fetch_page_text_tool, name="fetch_page_text")]
 
     def review(report):
         *_, unverified = check_report(report, checks, fetched)
@@ -567,7 +499,8 @@ def main():
 
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
-    submitted, usage = run_agent(chat, run_tool, SubmitReport, review, reject)
+    submitted, usage = run_agent(args, system_prompt, f"Check the links on {args.url}", tools, SubmitReport,
+                                 review, reject)
 
     if submitted is None:
         return
@@ -576,7 +509,7 @@ def main():
     findings = build_findings(checks, link_info, {a.url: a for a in assessments})
     findings += build_agent_findings(agent_findings, checks, fetched, link_info, findings)
     report = Report(
-        **report_fields(args, chat, started_at, start, usage),
+        **report_fields(args, started_at, start, usage),
         counts=dict(Counter(f.severity for f in findings)),
         narrative=submitted.narrative,
         rejected_submissions=usage["rejected_submissions"],
@@ -589,7 +522,7 @@ def main():
         unverified=unverified,
         rejected_claims=rejection_outcomes(rejections, submitted.agent_findings, checks, fetched),
     )
-    path = report_path("links", chat.model, args)
+    path = report_path("links", args)
     path.write_text(report.model_dump_json(indent=2))
     print(f"=====Report saved to {path}=====")
 
