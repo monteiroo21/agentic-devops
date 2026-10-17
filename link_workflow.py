@@ -8,10 +8,9 @@ from pydantic import BaseModel
 from common import (VERDICT_SEVERITY, Answers, Verdict, WorkflowReport, add_task, answers_schema, ask_tasks,
                     criteria_counts, make_judge, make_parser, parse_args, report_fields, report_path, skill_body,
                     with_ids)
-from link_analyzer import (SKILLS, Finding, build_findings, check_page_links, compact, ends_on_homepage,
-                           fetch_page_text, link_for_model, record_result)
+from link_analyzer import LINKS, SKILLS, Finding, build_findings, ends_on_homepage, record_result
+from tools.links import check_page_links, compact, fetch_page_text, link_for_model
 
-PAGE_TEXT_CHARS = 600  # the start of a page is enough to tell an error page from a real one
 SIGN_IN = re.compile(r"\b(log|sign)[ -]?in\b", re.IGNORECASE)
 
 class LinkNote(BaseModel):
@@ -39,22 +38,8 @@ SYSTEM_PROMPT = """
     Answer for every id you are given, and only for those.
 """
 
-# What the ids of each question are, and which answer means a problem; the skill of the same name says how to
-# judge them
-QUESTIONS = {
-    "broken-links": "Each id is a link that the link checker found broken, unreachable or blocked. Write a note for "
-                    "each id, with likely_intentional saying whether the problem looks deliberate.",
-    "soft-404": "Question: soft-404. Each id is a page that a link leads to, and the server answered it with a "
-                "working status. Fail a page that is a soft 404.",
-    "redirect": "Question: redirect. Each id is a link that was redirected and ended on a working page. Fail a link "
-                "whose redirect is a problem.",
-    "text-mismatch": "Question: text-mismatch. Each id is a link to a working page. Fail a link whose text and "
-                     "destination don't agree.",
-}
-
-def instructions(question):
-    # what the question's ids are, then the skill's instructions for judging them
-    return f"{QUESTIONS[question]}\n{skill_body(SKILLS[question])}"
+def instructions(skill_name, ids):
+    return f"{ids}\n{skill_body(SKILLS[skill_name])}"
 
 class LinkVerdict(BaseModel):
     criterion: str
@@ -102,7 +87,8 @@ def broken_entries(links):
 def soft_404_entries(pages, fetched):
     read = [(url, fetched[url]) for url in pages if fetched[url]["text"] is not None]
     return [(element_id,
-             compact({**page, "text": page["text"][:PAGE_TEXT_CHARS]}, leave_out=("content_type", "truncated")),
+             compact({**page, "text": page["text"][:LINKS.workflow_page_text_chars]},
+                     leave_out=("content_type", "truncated")),
              {"url": url, "links": pages[url], "rule": "soft-404"})
             for element_id, (url, page) in with_ids(read, "page")]
 
@@ -187,16 +173,24 @@ def main():
     answers = Answers()
     elements = {}
 
-    def ask_about(question, entries, **options):
+    def ask_about(question, ids, entries, **options):
         tasks = []
-        add_task(tasks, elements, question, instructions(question), entries, **options)
+        add_task(tasks, elements, question, instructions(question, ids), entries, **options)
         ask_tasks(judge, tasks, args.batch_size, usage, answers)
 
     # In this order: a link that fails one question is left out of the later ones
-    ask_about("broken-links", broken_entries(links), answer=LinkNote)
-    ask_about("soft-404", soft_404_entries(pages, fetched))
-    ask_about("redirect", redirect_entries(links, checks, failed_links(elements, answers)))
-    ask_about("text-mismatch", text_mismatch_entries(links, failed_links(elements, answers)))
+    ask_about("broken-links", "Each id is a link that the link checker found broken, unreachable or blocked. Write a "
+                              "note for each id, with likely_intentional saying whether the problem looks deliberate.",
+              broken_entries(links), answer=LinkNote)
+    ask_about("soft-404", "Question: soft-404. Each id is a page that a link leads to, and the server answered it "
+                          "with a working status. Fail a page that is a soft 404.",
+              soft_404_entries(pages, fetched))
+    ask_about("redirect", "Question: redirect. Each id is a link that was redirected and ended on a working page. "
+                          "Fail a link whose redirect is a problem.",
+              redirect_entries(links, checks, failed_links(elements, answers)))
+    ask_about("text-mismatch", "Question: text-mismatch. Each id is a link to a working page. Fail a link whose "
+                               "text and destination don't agree.",
+              text_mismatch_entries(links, failed_links(elements, answers)))
 
     findings, verdicts = build_report_findings(checks, link_info, elements, answers)
     report = LinkWorkflowReport(

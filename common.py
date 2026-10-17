@@ -11,51 +11,115 @@ from typing import ClassVar, Literal
 from urllib.parse import urlparse
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import (Agent, ModelResponse, ModelRetry, NativeOutput, RetryPromptPart, StructuredDict, ToolOutput,
                          ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, capture_run_messages)
 from chat_backends import make_model, read_response
 
 load_dotenv()
 
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+class Section(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+class ModelsConfig(Section):
+    gemini: str
+    ollama: str
+
+class GeminiConfig(Section):
+    thinking_level: str
+
+class OllamaConfig(Section):
+    url: str
+    max_output_tokens: int
+
+class AgentConfig(Section):
+    max_rejections: int
+    max_text_replies: int
+    max_invalid_reports: int
+    max_tool_retries: int
+
+class WorkflowConfig(Section):
+    batch_size: int
+    max_retries: int
+
+class AccessibilityConfig(Section):
+    skills: Path
+    axe_script: Path
+    wcag_tags: list[str]
+    max_elements_per_rule: int
+    max_page_items: int
+    max_text_chars: int
+    max_html_chars: int
+    max_violation_examples: int
+    max_title_headings: int
+    max_title_text_chars: int
+
+class LinksConfig(Section):
+    skills: Path
+    timeout_s: float
+    user_agent: str
+    max_page_bytes: int
+    max_page_text_chars: int
+    workflow_page_text_chars: int
+
+class Config(Section):
+    models: ModelsConfig
+    gemini: GeminiConfig
+    ollama: OllamaConfig
+    agent: AgentConfig
+    workflow: WorkflowConfig
+    accessibility: AccessibilityConfig
+    links: LinksConfig
+
+def load_config(path=CONFIG_PATH):
+    config = Config.model_validate(yaml.safe_load(path.read_text()))
+    config.accessibility.skills = path.parent / config.accessibility.skills
+    config.accessibility.axe_script = path.parent / config.accessibility.axe_script
+    config.links.skills = path.parent / config.links.skills
+    return config
+
+CONFIG = load_config()
+
 # Command line and model
 
-DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b-instruct"}
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
-
 def make_parser(description, workflow=False):
+    models = CONFIG.models.model_dump()
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("url", help="the page to check")
-    parser.add_argument("--backend", choices=DEFAULT_MODELS, default="gemini",
+    parser.add_argument("--backend", choices=models, default="gemini",
                         help="gemini (Google's API) or ollama (a local model)")
     parser.add_argument("--model", help="the model to use; defaults to "
-                        + ", ".join(f"{model} for {backend}" for backend, model in DEFAULT_MODELS.items()))
+                        + ", ".join(f"{model} for {backend}" for backend, model in models.items()))
     parser.add_argument("--no-think", action="store_true",
                         help="ollama only: answer without thinking first, which is much faster on a CPU")
-    parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_MAX_OUTPUT_TOKENS,
+    parser.add_argument("--max-output-tokens", type=int, default=CONFIG.ollama.max_output_tokens,
                         help="ollama only: the most tokens the model may write per turn, thinking included "
-                             f"(default {DEFAULT_MAX_OUTPUT_TOKENS})")
+                             f"(default {CONFIG.ollama.max_output_tokens})")
     if workflow:
-        parser.add_argument("--batch-size", type=int, default=8,
-                            help="how many elements the model judges in one call (default 8)")
+        parser.add_argument("--batch-size", type=int, default=CONFIG.workflow.batch_size,
+                            help="how many elements the model judges in one call "
+                                 f"(default {CONFIG.workflow.batch_size})")
     return parser
 
 def parse_args(parser):
     args = parser.parse_args()
     if urlparse(args.url).scheme not in ("http", "https"):
         parser.error(f"the URL must start with http:// or https://, got {args.url!r}")
-    if args.backend == "gemini" and (args.no_think or args.max_output_tokens != DEFAULT_MAX_OUTPUT_TOKENS):
+    if args.backend == "gemini" and (args.no_think or args.max_output_tokens != CONFIG.ollama.max_output_tokens):
         parser.error("--no-think and --max-output-tokens only work with --backend ollama")
     if getattr(args, "batch_size", 1) < 1:
         parser.error("--batch-size must be at least 1")
     return args
 
 def model_name(args):
-    return args.model or DEFAULT_MODELS[args.backend]
+    return args.model or getattr(CONFIG.models, args.backend)
 
 def model_and_settings(args):
     return make_model(args.backend, model_name(args), think=not args.no_think,
-                      max_output_tokens=args.max_output_tokens)
+                      max_output_tokens=args.max_output_tokens, ollama_url=CONFIG.ollama.url,
+                      thinking_level=CONFIG.gemini.thinking_level)
 
 # Reports
 
@@ -114,7 +178,6 @@ def report_fields(args, started_at, start, usage):
 
 # Skills: what each criterion means and how to judge it, in skills/<analyzer>/<name>/SKILL.md
 
-SKILLS_DIR = Path(__file__).parent / "skills"
 FRONTMATTER = re.compile(r"---\n(.*?)\n---\n?(.*)", re.DOTALL)
 
 @dataclass
@@ -141,9 +204,9 @@ def read_skill(path):
         raise ValueError(f"{path} doesn't start with a frontmatter between --- lines")
     return yaml.safe_load(match.group(1)) or {}, match.group(2).strip()
 
-def list_skills(analyzer):
+def list_skills(folder):
     skills = {}
-    for path in sorted((SKILLS_DIR / analyzer).glob("*/SKILL.md")):
+    for path in sorted(folder.glob("*/SKILL.md")):
         front, _ = read_skill(path)
         metadata = front.get("metadata") or {}
         if front.get("name") != path.parent.name:
@@ -154,7 +217,7 @@ def list_skills(analyzer):
             raise ValueError(f"{path}: every metadata value must be a string")
         skills[front["name"]] = Skill(front["name"], front["description"], metadata, path)
     if not skills:
-        raise ValueError(f"no skills in {SKILLS_DIR / analyzer}")
+        raise ValueError(f"no skills in {folder}")
     return skills
 
 def skill_body(skill):
@@ -164,12 +227,6 @@ def skills_prompt(skills):
     return "\n\n".join(f"## {skill.name}\n{skill.description}\n\n{skill_body(skill)}" for skill in skills.values())
 
 # Agent: the model calls the tools itself and submits one report
-
-MAX_REJECTIONS = 2  # times a report with unbacked items is sent back
-MAX_TEXT_REPLIES = 2  # times the model is asked to call a tool instead of writing text
-MAX_INVALID_REPORTS = 3  # times a report that doesn't follow the schema is sent back
-MAX_TOOL_RETRIES = 2  # times a tool call with invalid arguments is sent back, per tool
-OUTPUT_RETRIES = MAX_TEXT_REPLIES + MAX_REJECTIONS + MAX_INVALID_REPORTS
 
 def split_backed(items, kind, problem_of):
     backed, unverified = [], []
@@ -184,15 +241,17 @@ def split_backed(items, kind, problem_of):
 def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject):
     model, settings = model_and_settings(args)
     name = model_name(args)
+    limits = CONFIG.agent
+    output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
     agent = Agent(model, instructions=system_prompt, tools=tools, model_settings=settings,
                   output_type=ToolOutput(submission, name="submit_report"),
-                  retries={"tools": MAX_TOOL_RETRIES, "output": OUTPUT_RETRIES})
+                  retries={"tools": limits.max_tool_retries, "output": output_retries})
     usage = Counter()
 
     @agent.output_validator
     def check_report(report):
         unverified = review(report)
-        if not unverified or usage["rejected_submissions"] >= MAX_REJECTIONS:
+        if not unverified or usage["rejected_submissions"] >= limits.max_rejections:
             return report
         usage.update(rejected_submissions=1, unbacked_claims=len(unverified))
         print(f"=====Report rejected: {len(unverified)} unbacked item(s)=====")
@@ -211,7 +270,7 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
             print(f"====={name} was cut off at the output token limit=====")
 
         if not turn.tool_calls:
-            if usage["text_replies"] >= MAX_TEXT_REPLIES:
+            if usage["text_replies"] >= limits.max_text_replies:
                 print(f"====={name} has no more function calls=====")
                 return False
             usage["text_replies"] += 1
@@ -256,8 +315,6 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
     return submitted, usage
 
 # Workflow: the script runs the tools and asks the model about a few elements at a time
-
-MAX_RETRIES = 2  # times a batch is asked again about the elements its answer left out
 
 def answers_schema(key, properties, required):
     return {
@@ -337,7 +394,7 @@ def ask(judge, task, items, usage):
     asked = {item["id"] for item in items}
     answers, omitted, invented = {}, [], []
     pending = items
-    for attempt in range(1 + MAX_RETRIES):
+    for attempt in range(1 + CONFIG.workflow.max_retries):
         if attempt:
             print(f"=====Asking again about {len(pending)} element(s) left out=====")
         data, reply = ask_json(judge, task.instructions + "\n\n" + json.dumps(pending, ensure_ascii=False, indent=1),
