@@ -6,18 +6,6 @@ ACCESSIBILITY = CONFIG.accessibility
 # Runs in the page: what a reader sees, for the judgements axe can't make
 PAGE_CONTENT_JS = (Path(__file__).parent / "page_content.js").read_text()
 
-GET_PAGE_CONTENT = ("Loads a web page in a headless browser and returns what a reader sees: its title, the lang "
-                    "attribute of the page, the start of its visible main text, its headings in order with the start "
-                    "of the text under each, its visible images and links, and the parts of the page that have their "
-                    "own lang attribute, with their text. Each image comes with its selector, src, alt text, the text "
-                    "of the link it is in and the text around it; each link with its selector, text, URL, aria-label "
-                    "and title attributes and the text around it. Both also give the heading of the section they are "
-                    "in. A passage in another language that is not listed in parts has no lang attribute of its own. "
-                    f"Up to {ACCESSIBILITY.max_page_items} images, links and parts are listed. Empty fields are left "
-                    "out: an image with no alt attribute has no alt field, while a decorative image has an empty one. "
-                    "The final URL is only given when the page redirected, and an error only when the page could not "
-                    "be loaded.")
-
 def get_page_content(url):
     return visit(url, "content", lambda page: page.evaluate(PAGE_CONTENT_JS))
 

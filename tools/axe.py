@@ -4,13 +4,6 @@ from tools.browser import page_fields, visit
 ACCESSIBILITY = CONFIG.accessibility
 AXE_JS = ACCESSIBILITY.axe_script.read_text()
 
-RUN_AXE = ("Loads a web page in a headless browser and runs the axe-core automated accessibility checks for WCAG "
-           "levels A and AA on it. Returns the page's status code, the rules the page violates and the rules axe "
-           "could not decide, which need review, each with its impact, WCAG tags and up to "
-           f"{ACCESSIBILITY.max_elements_per_rule} of the elements involved, and the ids of the rules that every "
-           "element passed. The final URL is only given when the page redirected, and an error only when the page "
-           "could not be checked.")
-
 def run_axe(url):
     def collect(page):
         page.add_script_tag(content=AXE_JS)

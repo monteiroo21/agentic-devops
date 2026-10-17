@@ -16,22 +16,6 @@ client = httpx.Client(
 IGNORED_LINK_RELS = {"preconnect", "dns-prefetch"}
 HIDDEN_FIELDS = {"verdict", "time_ms"}  # the model must judge each link itself, and timings don't help it
 
-CHECK_URL = ("Checks whether a single URL works and returns its status code, final URL, redirect chain, content type "
-             "and any connection error, and for an HTML page its title and first heading. Empty fields are left out, "
-             "and the final URL is only given when it differs from the URL.")
-
-CHECK_PAGE_LINKS = ("Finds every link on a web page and checks all of them. Returns each link's text, tag and whether "
-                    "it is internal or external, with its status code, final URL, redirect chain, content type and any "
-                    "connection error, and for a link to an HTML page that page's title and first heading. Empty "
-                    "fields are left out, and the final URL is only given when it differs from the link's URL.")
-
-CHECK_URLS = ("Checks whether multiple URLs work and returns their status code, final URL, redirect chain, content "
-              "type and any connection error, and for HTML pages their title and first heading. Empty fields are left "
-              "out, and the final URL is only given when it differs from the URL.")
-
-FETCH_PAGE_TEXT = ("Fetches the title, first heading and a short snippet of visible text from a web page. Empty "
-                   "fields are left out, and the final URL is only given when the page redirected.")
-
 def page_soup(html):
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "noscript", "template"]):

@@ -15,8 +15,12 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import (Agent, ModelResponse, ModelRetry, NativeOutput, RetryPromptPart, StructuredDict, ToolOutput,
                          ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, capture_run_messages)
 from chat_backends import make_model, read_response
+import logfire
 
 load_dotenv()
+logfire.configure(send_to_logfire="if-token-present")
+logfire.instrument_pydantic_ai()
+logfire.instrument_httpx()
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
@@ -227,6 +231,12 @@ def skills_prompt(skills):
     return "\n\n".join(f"## {skill.name}\n{skill.description}\n\n{skill_body(skill)}" for skill in skills.values())
 
 # Agent: the model calls the tools itself and submits one report
+
+def docstring_with(**values):
+    def fill(function):
+        function.__doc__ = function.__doc__.format(**values)
+        return function
+    return fill
 
 def split_backed(items, kind, problem_of):
     backed, unverified = [], []

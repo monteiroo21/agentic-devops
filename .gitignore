@@ -12,3 +12,4 @@ wheels/
 .env
 node_modules/
 reports/
+.logfire/

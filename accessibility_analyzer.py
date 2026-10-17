@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Tool
-from common import (CONFIG, AgentReport, list_skills, make_parser, parse_args, report_fields, report_path, run_agent,
-                    skills_prompt, split_backed)
-from tools.axe import RUN_AXE, axe_for_model, axe_selector, run_axe, wcag_tags
-from tools.page_content import GET_PAGE_CONTENT, content_for_model, get_page_content
+from common import (CONFIG, AgentReport, docstring_with, list_skills, make_parser, parse_args, report_fields,
+                    report_path, run_agent, skills_prompt, split_backed)
+from tools.axe import axe_for_model, axe_selector, run_axe, wcag_tags
+from tools.page_content import content_for_model, get_page_content
 
 ACCESSIBILITY = CONFIG.accessibility
 
@@ -225,22 +225,37 @@ def main():
             content = tool_result["content"]
         return for_model(tool_name, tool_result)
 
+    @docstring_with(max_elements_per_rule=ACCESSIBILITY.max_elements_per_rule)
     def run_axe_tool(url: str):
-        """
+        """Loads a web page in a headless browser and runs the axe-core automated accessibility checks for WCAG
+        levels A and AA on it. Returns the page's status code, the rules the page violates and the rules axe could
+        not decide, which need review, each with its impact, WCAG tags and up to {max_elements_per_rule} of the
+        elements involved, and the ids of the rules that every element passed. The final URL is only given when the
+        page redirected, and an error only when the page could not be checked.
+
         Args:
             url: The URL of the web page to check.
         """
         return run_tool("run_axe", {"url": url})
 
+    @docstring_with(max_page_items=ACCESSIBILITY.max_page_items)
     def get_page_content_tool(url: str):
-        """
+        """Loads a web page in a headless browser and returns what a reader sees: its title, the lang attribute of
+        the page, the start of its visible main text, its headings in order with the start of the text under each,
+        its visible images and links, and the parts of the page that have their own lang attribute, with their text.
+        Each image comes with its selector, src, alt text, the text of the link it is in and the text around it;
+        each link with its selector, text, URL, aria-label and title attributes and the text around it. Both also
+        give the heading of the section they are in. A passage in another language that is not listed in parts has
+        no lang attribute of its own. Up to {max_page_items} images, links and parts are listed. Empty fields are
+        left out: an image with no alt attribute has no alt field, while a decorative image has an empty one. The
+        final URL is only given when the page redirected, and an error only when the page could not be loaded.
+
         Args:
             url: The URL of the web page to read.
         """
         return run_tool("get_page_content", {"url": url})
 
-    tools = [Tool(run_axe_tool, name="run_axe", description=RUN_AXE),
-             Tool(get_page_content_tool, name="get_page_content", description=GET_PAGE_CONTENT)]
+    tools = [Tool(run_axe_tool, name="run_axe"), Tool(get_page_content_tool, name="get_page_content")]
 
     def review(report):
         *_, unverified = check_report(report, axe, content)

@@ -7,8 +7,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Tool
 from common import (CONFIG, AgentReport, list_skills, make_parser, parse_args, report_fields, report_path, run_agent,
                     skills_prompt, split_backed)
-from tools.links import (CHECK_PAGE_LINKS, CHECK_URL, CHECK_URLS, FETCH_PAGE_TEXT, check_page_links, check_url,
-                         check_urls, fetch_page_text, for_model)
+from tools.links import check_page_links, check_url, check_urls, fetch_page_text, for_model
 
 LINKS = CONFIG.links
 
@@ -280,37 +279,47 @@ def main():
         return for_model(tool_name, tool_result)
 
     def check_url_tool(url: str):
-        """
+        """Checks whether a single URL works and returns its status code, final URL, redirect chain, content type and
+        any connection error, and for an HTML page its title and first heading. Empty fields are left out, and the
+        final URL is only given when it differs from the URL.
+
         Args:
             url: The URL to check.
         """
         return run_tool("check_url", {"url": url})
 
     def check_page_links_tool(url: str):
-        """
+        """Finds every link on a web page and checks all of them. Returns each link's text, tag and whether it is
+        internal or external, with its status code, final URL, redirect chain, content type and any connection
+        error, and for a link to an HTML page that page's title and first heading. Empty fields are left out, and the
+        final URL is only given when it differs from the link's URL.
+
         Args:
             url: The URL of the web page whose links to check.
         """
         return run_tool("check_page_links", {"url": url})
 
     def check_urls_tool(urls: list[str]):
-        """
+        """Checks whether multiple URLs work and returns their status code, final URL, redirect chain, content type
+        and any connection error, and for HTML pages their title and first heading. Empty fields are left out, and
+        the final URL is only given when it differs from the URL.
+
         Args:
             urls: The URLs to check.
         """
         return run_tool("check_urls", {"urls": urls})
 
     def fetch_page_text_tool(url: str):
-        """
+        """Fetches the title, first heading and a short snippet of visible text from a web page. Empty fields are
+        left out, and the final URL is only given when the page redirected.
+
         Args:
             url: The URL of the web page to fetch text from.
         """
         return run_tool("fetch_page_text", {"url": url})
 
-    tools = [Tool(check_url_tool, name="check_url", description=CHECK_URL),
-             Tool(check_page_links_tool, name="check_page_links", description=CHECK_PAGE_LINKS),
-             Tool(check_urls_tool, name="check_urls", description=CHECK_URLS),
-             Tool(fetch_page_text_tool, name="fetch_page_text", description=FETCH_PAGE_TEXT)]
+    tools = [Tool(check_url_tool, name="check_url"), Tool(check_page_links_tool, name="check_page_links"),
+             Tool(check_urls_tool, name="check_urls"), Tool(fetch_page_text_tool, name="fetch_page_text")]
 
     def review(report):
         *_, unverified = check_report(report, checks, fetched)
