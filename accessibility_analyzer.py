@@ -7,7 +7,8 @@ from typing import Literal
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel, Field
 from pydantic_ai import Tool
-from common import AgentReport, make_parser, parse_args, report_fields, report_path, run_agent, split_backed
+from common import (AgentReport, list_skills, make_parser, parse_args, report_fields, report_path, run_agent,
+                    skills_prompt, split_backed)
 
 AXE_JS = Path("node_modules/axe-core/axe.min.js").read_text()
 WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
@@ -29,15 +30,15 @@ class Review(BaseModel):
         description="What in the tool results supports the verdict, or what is missing to decide.")
     note: str = Field(description="One or two sentences explaining the verdict.")
 
-AgentRule = Literal["alt-text", "link-purpose", "page-title", "page-language", "heading"]
-WCAG_FOR_RULE = {"alt-text": ["wcag111"], "link-purpose": ["wcag244"], "page-title": ["wcag242"],
-                 "page-language": ["wcag311", "wcag312"], "heading": ["wcag131", "wcag246"]}
-ELEMENT_LISTS = {"alt-text": ("images", "image"), "link-purpose": ("links", "link"),
-                 "heading": ("headings", "heading"), "page-language": ("parts", "part")}
-NEEDS_SELECTOR = {"alt-text", "link-purpose"}
+SKILLS = list_skills("accessibility")
+CRITERIA = [skill for skill in SKILLS.values() if skill.rules()]
+AgentRule = Literal[tuple(skill.name for skill in CRITERIA)]
+WCAG_FOR_RULE = {skill.name: skill.values("wcag") for skill in CRITERIA}
+ELEMENT_LISTS = {skill.name: skill.metadata["elements"] for skill in CRITERIA if "elements" in skill.metadata}
+NEEDS_SELECTOR = {skill.name for skill in CRITERIA if skill.flag("needs-selector")}
 
 class AgentFinding(BaseModel):
-    rule: AgentRule = Field(description="The kind of problem.")
+    rule: AgentRule = Field(description="The kind of problem.")  # pyright: ignore[reportInvalidTypeForm]
     selector: str | None = Field(  # None for a problem with the page as a whole
         None, description="The element with the problem, exactly as get_page_content returned it. Leave it out for "
                           "the page title, or for a problem with the page as a whole.")
@@ -175,6 +176,10 @@ def get_page_content(url):
 def wcag_tags(rule):
     return [t for t in rule["tags"] if t.startswith("wcag")]
 
+def wcag_number(tag):
+    digits = tag.removeprefix("wcag")
+    return f"{digits[0]}.{digits[1]}.{digits[2:]}"
+
 def axe_selector(node):
     # axe gives a list, one selector per frame or shadow root; a single string is easier for the model to repeat
     return " ".join(str(part) for part in node["target"])
@@ -202,7 +207,8 @@ def finding_problem(finding, content):
         return "you never read the page with get_page_content"
     if finding.rule not in ELEMENT_LISTS:
         return None  # page-title is about the whole page
-    kind, noun = ELEMENT_LISTS[finding.rule]
+    kind = ELEMENT_LISTS[finding.rule]
+    noun = kind.removesuffix("s")
     if finding.selector is None:
         return f"give the selector of the {noun}" if finding.rule in NEEDS_SELECTOR else None
     if finding.selector not in {item["selector"] for item in content[kind]}:
@@ -379,35 +385,20 @@ def main():
 
         Start by calling run_axe and get_page_content on the URL. You can call both at once.
 
-        run_axe gives you axe-core's results. Its violations are already confirmed: do not judge them again, just
-        explain each one and suggest a fix. Its needs_review items are ones axe could not decide. Judge them only
-        if the tools show you what you need. If they don't, for example a colour contrast over an image, which
-        depends on the pixels behind the text, say they need manual review instead of guessing. Not being able
-        to check something is a reason for manual review, never for fail.
-
-        axe only checks that things exist, not that they make sense. Use get_page_content to judge:
-        - alt-text (1.1.1): does each alt text say what the image adds? Look out for file names, "image" or
-          "photo", and alt text that repeats the link text. An empty alt is right for a decorative image, and for
-          an image inside a link whose text already says where it goes.
-        - link-purpose (2.4.4): can a user tell where each link goes? A link's text is everything inside it, so a
-          link around a card can include a name and a price. Most links are clear from their own text alone, like
-          a menu link that names a section or a link that names a topic: those need no context. Only when the text
-          alone is vague, like "click here" or "read more", do its context and heading matter, and then the text
-          around the link counts as explaining it. Judge only whether a user can tell where the link goes, not
-          whether the topic is explained there. Also look out for the same text leading to different places.
-        - page-title (2.4.2): does the title say what the page is about?
-        - page-language (3.1.1, 3.1.2): does lang match the language of the text, and is every passage in another
-          language listed in parts with the right lang? Names of people and places don't need their own lang.
-        - heading (1.3.1, 2.4.6): do the headings describe the sections under them, and do their levels show how
-          the page is organised? A heading followed by lower-level headings needs no text of its own under it:
-          those subheadings are its content. A heading over a list of links passes if it names what the links
-          have in common. Skipped heading levels alone aren't a WCAG failure.
+        Judge run_axe's results with the axe-results skill below. axe only checks that things exist, not that they
+        make sense, so also judge what get_page_content returns with each of the other skills, and give each
+        problem you find the name of its skill as its rule.
 
         Only report what breaks a criterion, not what could merely be better. Only report what the tools showed
-        you, and refer to elements by their selector exactly as the tools returned it. You do not check whether links work or whether a link's destination matches its text.
+        you, and refer to elements by their selector exactly as the tools returned it. Not being able to check
+        something is a reason for manual-review, never for fail. You do not check whether links work or whether a
+        link's destination matches its text.
         When you have finished, hand in your report with submit_report: your comments on violations go in
         assessments, your decisions on needs_review items in reviews, and the problems you found in agent_findings.
-    """
+
+        # Skills
+
+    """ + skills_prompt(SKILLS)
 
     # What the tools found, filled in during the run: the latest successful result of each
     axe = None

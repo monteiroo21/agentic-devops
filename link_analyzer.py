@@ -8,7 +8,8 @@ import lxml.html
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 from pydantic_ai import Tool
-from common import AgentReport, make_parser, parse_args, report_fields, report_path, run_agent, split_backed
+from common import (AgentReport, list_skills, make_parser, parse_args, report_fields, report_path, run_agent,
+                    skills_prompt, split_backed)
 
 client = httpx.Client(
     follow_redirects=True,
@@ -28,12 +29,15 @@ class Assessment(BaseModel):
     suggested_fix: str | None = Field(
         None, description="How to fix it, if you can tell. Leave this out if no fix is needed.")
 
-AgentRule = Literal["soft-404", "redirect-to-homepage", "redirect-to-login", "text-mismatch", "other"]
-NEEDS_PAGE_TEXT = {"soft-404", "text-mismatch", "other"}
+SKILLS = list_skills("links")
+FINDING_RULES = [rule for skill in SKILLS.values() for rule in skill.rules()] + ["other"]
+AgentRule = Literal[tuple(FINDING_RULES)]
+NEEDS_PAGE_TEXT = {rule for skill in SKILLS.values() if skill.flag("needs-page-text")
+                   for rule in skill.rules()} | {"other"}
 
 class AgentFinding(BaseModel):
     url: str = Field(description="The link with the problem, exactly as the tools returned it.")
-    rule: AgentRule = Field(description="The kind of problem.")
+    rule: AgentRule = Field(description="The kind of problem.")  # pyright: ignore[reportInvalidTypeForm]
     evidence: str = Field(
         description="What in the tool results shows the problem, e.g. the page title or the final URL.")
     note: str = Field(description="One or two sentences explaining the problem.")
@@ -408,27 +412,30 @@ def rejection_outcomes(rejections, final_findings, checks, fetched):
 def main():
     args = parse_args(make_parser("Find link problems on a web page."))
 
-    system_prompt = """
+    rules = ", ".join(FINDING_RULES[:-1])
+    read_first = [rule for rule in FINDING_RULES if rule in NEEDS_PAGE_TEXT]
+    read_first = ", ".join(read_first[:-1]) + " or " + read_first[-1]
+    system_prompt = f"""
         You are a web link analyzer. Your goal is to find every link problem on the page the user gives you,
         including problems that the status code alone does not reveal.
 
         Start by calling check_page_links on the URL: it finds every link on the page and checks all of them.
 
-        A status of 200 only means the server answered. It does not mean the page shows what the link promises:
-        an error page, an empty page or the wrong page can all return 200. So for every link to a page, internal
-        or external, ask whether its text, its URL and the page it ends up on agree. Look out for:
-        - a page that returns 200 but is an error page, or no longer has what the link promises
-        - a redirect that ends somewhere the link did not promise, such as the homepage, a login page
-        - a link whose text does not match its URL or the page it leads to
-        Read every page you cannot confirm from its link text, URL, title and heading alone with fetch_page_text.
-        You can fetch several pages at once.
+        Comment on the links it found broken, unreachable or blocked in assessments, with the broken-links skill
+        below. A status of 200 only means the server answered. It does not mean the page shows what the link
+        promises: an error page, an empty page or the wrong page can all return 200. So judge every link to a page,
+        internal or external, with each of the other skills. Read every page you cannot confirm from its link text,
+        URL, title and heading alone with fetch_page_text. You can fetch several pages at once.
 
-        Put the problems you found that the status code does not show in agent_findings,
-        using the most specific rule that fits. Before reporting a soft-404, text-mismatch or other
+        Put the problems you found that the status code does not show in agent_findings, using the most specific
+        rule that fits: {rules}, or other for a problem none of them covers. Before reporting a {read_first}
         finding, read that page with fetch_page_text.
 
         Only report what the tools showed you. You do not check accessibility, so do not comment on it.
-    """
+
+        # Skills
+
+    """ + skills_prompt(SKILLS)
 
     # What the tools found, filled in during the run
     link_info = {}

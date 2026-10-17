@@ -3,11 +3,11 @@ from collections import Counter
 from datetime import datetime, timezone
 from functools import partial
 from pydantic import BaseModel
-from accessibility_analyzer import (MAX_TEXT_CHARS, WCAG_FOR_RULE, Finding, axe_selector, check_messages,
+from accessibility_analyzer import (MAX_TEXT_CHARS, SKILLS, WCAG_FOR_RULE, Finding, axe_selector, check_messages,
                                     get_page_content, item_for_model, make_axe_parser, run_axe, save_axe,
-                                    wcag_tags)
+                                    wcag_number, wcag_tags)
 from common import (VERDICT_SEVERITY, Answers, Note, WorkflowReport, add_task, ask_tasks, criteria_counts,
-                    make_judge, parse_args, report_fields, report_path, with_ids, without)
+                    make_judge, parse_args, report_fields, report_path, skill_body, with_ids, without)
 
 SYSTEM_PROMPT = """
     You are a web accessibility reviewer. You judge one WCAG 2.2 criterion at a time for a few elements of a web
@@ -22,43 +22,30 @@ SYSTEM_PROMPT = """
     and only for those.
 """
 
-VIOLATIONS = """axe-core has confirmed these accessibility violations, so don't judge them again. For each id,
-write a note explaining the problem and who it affects in one or two sentences, and suggest a fix if you can tell.
-Only suggest specific colours if you know their contrast ratio meets the requirement."""
+QUESTIONS = {
+    "axe-violations": ("axe-results", "Each id is a rule that axe-core found violated, with a few of the elements "
+                                      "involved. Write a note for each id."),
+    "axe-needs-review": ("axe-results", "Each id is an element that axe-core could not decide, with the rule it was "
+                                        "checked against. Answer pass or fail only if the information here shows "
+                                        "which; otherwise answer unsure."),
+    "alt-text": ("alt-text", "Each id is an image."),
+    "link-purpose": ("link-purpose", "Each id is a link."),
+    "repeated-links": ("link-purpose", "Each id is a group of links with the same text that lead to different places."),
+    "page-title": ("page-title", 'The id "title" is the page, with its title, first headings and the start of its '
+                                 'text.'),
+    "page-language": ("page-language", 'The id "lang" is the page, with its lang and the start of its text. The '
+                                       'other ids are the parts of it that have their own lang.'),
+    "heading": ("heading", "Each id is a heading."),
+}
 
-NEEDS_REVIEW = """Criterion: the axe-core rule named in each element. axe-core could not decide these elements.
-Answer pass or fail only if the information here shows which; otherwise answer unsure, for example for a colour
-contrast over an image, which depends on the pixels behind the text. Not being able to tell the colours is a
-reason for unsure, not for fail."""
-
-ALT_TEXT = """Criterion: alt-text (WCAG 1.1.1). Does each image's alt text say what the image adds to the page?
-Look out for file names, "image" or "photo", and alt text that repeats the link text. An empty alt is right for
-a decorative image, and for an image inside a link whose text already says where it goes. An image with no alt
-field has no alt attribute at all, which fails."""
-
-LINK_PURPOSE = """Criterion: link-purpose (WCAG 2.4.4). Can a user tell where each link goes? Every item is a
-link, and its text is everything inside it, so a link around a card can include a name and a price. Most links
-are clear from their own text alone, like a menu link that names a section or a link that names a topic: those
-pass without any context. Only when the text alone is vague, like "click here" or "read more", do its context and
-heading matter, and then the text around the link counts as explaining it. Judge only whether a user can tell
-where the link goes, not whether the topic is explained there, and not whether the destination matches the text."""
-
-REPEATED_LINKS = """Criterion: link-purpose (WCAG 2.4.4). Each id is a group of links with the same text that
-lead to different places. Fail a group if its links' context and headings don't tell them apart."""
-
-PAGE_TITLE = """Criterion: page-title (WCAG 2.4.2). Does the page title say what the page is about? Compare it
-with the page's first headings and the start of its text."""
-
-PAGE_LANGUAGE = """Criterion: page-language (WCAG 3.1.1 and 3.1.2). For the id "lang": does the page's lang
-attribute match the language of its text, and is every passage in another language listed as one of the parts?
-For each part: does its lang match the language of its text? Names of people and places don't need their own
-lang. An element with no lang field has no lang attribute."""
-
-HEADING = """Criterion: heading (WCAG 1.3.1 and 2.4.6). The headings are listed in page order. Does each heading
-describe the content under it (section_text), and does its level fit where it sits in the outline? A heading with
-no section_text that is followed by lower-level headings is fine: those subheadings are its content. A heading over
-a list of links passes if it names what the links have in common. Skipped heading levels alone aren't a WCAG
-failure."""
+def instructions(question):
+    skill_name, ids = QUESTIONS[question]
+    skill = SKILLS[skill_name]
+    criterion = ""
+    if skill.values("wcag"):
+        numbers = " and ".join(wcag_number(tag) for tag in skill.values("wcag"))
+        criterion = f"Criterion: {skill.name} (WCAG {numbers}). "
+    return f"{criterion}{ids}\n{skill_body(skill)}"
 
 def repeated_link_texts(links):
     groups = {}
@@ -76,21 +63,19 @@ def group_for_model(group):
         for link in group]}
 
 def build_tasks(axe, content):
-    # the questions to ask, and what the report keeps about each element, by id;
-    # the criterion is a rule from WCAG_FOR_RULE, or axe-violations or axe-needs-review
     tasks = []
     elements = {}
     add = partial(add_task, tasks, elements)
 
     if axe is not None:
-        add("axe-violations", VIOLATIONS, [
+        add("axe-violations", instructions("axe-violations"), [
             (element_id, {"rule": rule["id"], "help": rule["help"], "elements_total": len(rule["nodes"]),
                           "examples": [{"html": node["html"][:300], "problems": check_messages(node)}
                                        for node in rule["nodes"][:3]]},
              {"rule": rule["id"]})
             for element_id, rule in with_ids(axe["violations"], "violation")], answer=Note)
         to_review = [(rule, node) for rule in axe["incomplete"] for node in rule["nodes"]]
-        add("axe-needs-review", NEEDS_REVIEW, [
+        add("axe-needs-review", instructions("axe-needs-review"), [
             (element_id, {"rule": rule["id"], "help": rule["help"], "html": node["html"][:300],
                           "problems": check_messages(node)},
              {"rule": rule["id"], "wcag": wcag_tags(rule), "selector": axe_selector(node),
@@ -98,28 +83,28 @@ def build_tasks(axe, content):
             for element_id, (rule, node) in with_ids(to_review, "review")])
 
     if content is not None:
-        add("alt-text", ALT_TEXT, [
+        add("alt-text", instructions("alt-text"), [
             (element_id, item_for_model(without(image, "selector"), "link_text"), {"selector": image["selector"]})
             for element_id, image in with_ids(content["images"], "img")])
         # no destinations here: whether a link leads where it says is the link checker's job
-        add("link-purpose", LINK_PURPOSE, [
+        add("link-purpose", instructions("link-purpose"), [
             (element_id, item_for_model(without(link, "selector", "href"), "text"), {"selector": link["selector"]})
             for element_id, link in with_ids(content["links"], "link")])
-        add("link-purpose", REPEATED_LINKS, [
+        add("link-purpose", instructions("repeated-links"), [
             (element_id, group_for_model(group), {"selector": ", ".join(link["selector"] for link in group)})
             for element_id, group in with_ids(repeated_link_texts(content["links"]), "repeat")])
-        add("page-title", PAGE_TITLE, [
+        add("page-title", instructions("page-title"), [
             ("title", {"title": content["title"],
                        "headings": [heading["text"] for heading in content["headings"][:5]],
                        "text": content["text"][:500]},
              {"selector": None})])
-        add("page-language", PAGE_LANGUAGE,
+        add("page-language", instructions("page-language"),
             [("lang", item_for_model({"lang": content["lang"], "text": content["text"][:MAX_TEXT_CHARS]}, "text"),
               {"selector": None})]
             + [(element_id, without(part, "selector"), {"selector": part["selector"]})
                for element_id, part in with_ids(content["parts"], "part")],
             batched=False)
-        add("heading", HEADING, [
+        add("heading", instructions("heading"), [
             (element_id, item_for_model(without(heading, "selector"), "text"), {"selector": heading["selector"]})
             for element_id, heading in with_ids(content["headings"], "h")],
             batched=False)

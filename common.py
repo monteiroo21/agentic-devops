@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Literal
 from urllib.parse import urlparse
+import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import (Agent, ModelResponse, ModelRetry, NativeOutput, RetryPromptPart, StructuredDict, ToolOutput,
@@ -110,6 +111,57 @@ def report_fields(args, started_at, start, usage):
         output_tokens=usage["output_tokens"],
         truncated_replies=usage["truncated_replies"],
     )
+
+# Skills: what each criterion means and how to judge it, in skills/<analyzer>/<name>/SKILL.md
+
+SKILLS_DIR = Path(__file__).parent / "skills"
+FRONTMATTER = re.compile(r"---\n(.*?)\n---\n?(.*)", re.DOTALL)
+
+@dataclass
+class Skill:
+    name: str
+    description: str
+    metadata: dict[str, str]  # the skills format only allows strings, so a list is separated by spaces
+    path: Path
+
+    def values(self, key):
+        return self.metadata.get(key, "").split()
+
+    def flag(self, key):
+        return self.metadata.get(key) == "true"
+
+    def rules(self):
+        if not self.metadata:
+            return []
+        return self.values("rules") or [self.name]
+
+def read_skill(path):
+    match = FRONTMATTER.match(path.read_text())
+    if match is None:
+        raise ValueError(f"{path} doesn't start with a frontmatter between --- lines")
+    return yaml.safe_load(match.group(1)) or {}, match.group(2).strip()
+
+def list_skills(analyzer):
+    skills = {}
+    for path in sorted((SKILLS_DIR / analyzer).glob("*/SKILL.md")):
+        front, _ = read_skill(path)
+        metadata = front.get("metadata") or {}
+        if front.get("name") != path.parent.name:
+            raise ValueError(f"{path}: its name, {front.get('name')!r}, must be the name of its folder")
+        if not front.get("description"):
+            raise ValueError(f"{path} has no description")
+        if not all(isinstance(value, str) for value in metadata.values()):
+            raise ValueError(f"{path}: every metadata value must be a string")
+        skills[front["name"]] = Skill(front["name"], front["description"], metadata, path)
+    if not skills:
+        raise ValueError(f"no skills in {SKILLS_DIR / analyzer}")
+    return skills
+
+def skill_body(skill):
+    return read_skill(skill.path)[1]
+
+def skills_prompt(skills):
+    return "\n\n".join(f"## {skill.name}\n{skill.description}\n\n{skill_body(skill)}" for skill in skills.values())
 
 # Agent: the model calls the tools itself and submits one report
 

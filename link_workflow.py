@@ -6,9 +6,10 @@ from typing import ClassVar
 from urllib.parse import urlparse
 from pydantic import BaseModel
 from common import (VERDICT_SEVERITY, Answers, Verdict, WorkflowReport, add_task, answers_schema, ask_tasks,
-                    criteria_counts, make_judge, make_parser, parse_args, report_fields, report_path, with_ids)
-from link_analyzer import (Finding, build_findings, check_page_links, compact, ends_on_homepage, fetch_page_text,
-                           link_for_model, record_result)
+                    criteria_counts, make_judge, make_parser, parse_args, report_fields, report_path, skill_body,
+                    with_ids)
+from link_analyzer import (SKILLS, Finding, build_findings, check_page_links, compact, ends_on_homepage,
+                           fetch_page_text, link_for_model, record_result)
 
 PAGE_TEXT_CHARS = 600  # the start of a page is enough to tell an error page from a real one
 SIGN_IN = re.compile(r"\b(log|sign)[ -]?in\b", re.IGNORECASE)
@@ -38,25 +39,22 @@ SYSTEM_PROMPT = """
     Answer for every id you are given, and only for those.
 """
 
-BROKEN_LINKS = """The link checker has confirmed that these links are broken, unreachable or blocked, so don't
-judge them again. For each id, write a note explaining the problem in one or two sentences, say whether it looks
-deliberate (likely_intentional), for example a test page that demonstrates a 404, and suggest how to fix it if you
-can tell."""
+# What the ids of each question are, and which answer means a problem; the skill of the same name says how to
+# judge them
+QUESTIONS = {
+    "broken-links": "Each id is a link that the link checker found broken, unreachable or blocked. Write a note for "
+                    "each id, with likely_intentional saying whether the problem looks deliberate.",
+    "soft-404": "Question: soft-404. Each id is a page that a link leads to, and the server answered it with a "
+                "working status. Fail a page that is a soft 404.",
+    "redirect": "Question: redirect. Each id is a link that was redirected and ended on a working page. Fail a link "
+                "whose redirect is a problem.",
+    "text-mismatch": "Question: text-mismatch. Each id is a link to a working page. Fail a link whose text and "
+                     "destination don't agree.",
+}
 
-SOFT_404 = """Question: soft-404. Each id is a page that a link leads to, and the server answered it with a working
-status. That only means the server answered: an error page or an empty page can return a working status too. Fail
-a page that is an error page or says that what it was about is no longer there, for example "page not found",
-"no longer available" or an error message. Pass a page that shows real content."""
-
-REDIRECT = """Question: redirect. Each id is a link that was redirected and ended on a working page. Compare the
-link's text and URL with its final_url and the title and heading of the page it ended on. Pass a link that ends on
-the page it promises, even at a new address. Fail a link that ends somewhere the link did not promise, such as the
-homepage, a login page or a list page instead of the item it names."""
-
-TEXT_MISMATCH = """Question: text-mismatch. Does each link lead to what its text says? Compare the link's text with
-its URL and the title and heading of the page it leads to. Fail a link whose text and destination clearly don't
-agree, for example a link that names one product but leads to another. Pass a link whose destination fits its text.
-Text that names no destination, like "read more", can't disagree with it, so it passes."""
+def instructions(question):
+    # what the question's ids are, then the skill's instructions for judging them
+    return f"{QUESTIONS[question]}\n{skill_body(SKILLS[question])}"
 
 class LinkVerdict(BaseModel):
     criterion: str
@@ -189,16 +187,16 @@ def main():
     answers = Answers()
     elements = {}
 
-    def ask_about(criterion, instructions, entries, **options):
+    def ask_about(question, entries, **options):
         tasks = []
-        add_task(tasks, elements, criterion, instructions, entries, **options)
+        add_task(tasks, elements, question, instructions(question), entries, **options)
         ask_tasks(judge, tasks, args.batch_size, usage, answers)
 
     # In this order: a link that fails one question is left out of the later ones
-    ask_about("broken-links", BROKEN_LINKS, broken_entries(links), answer=LinkNote)
-    ask_about("soft-404", SOFT_404, soft_404_entries(pages, fetched))
-    ask_about("redirect", REDIRECT, redirect_entries(links, checks, failed_links(elements, answers)))
-    ask_about("text-mismatch", TEXT_MISMATCH, text_mismatch_entries(links, failed_links(elements, answers)))
+    ask_about("broken-links", broken_entries(links), answer=LinkNote)
+    ask_about("soft-404", soft_404_entries(pages, fetched))
+    ask_about("redirect", redirect_entries(links, checks, failed_links(elements, answers)))
+    ask_about("text-mismatch", text_mismatch_entries(links, failed_links(elements, answers)))
 
     findings, verdicts = build_report_findings(checks, link_info, elements, answers)
     report = LinkWorkflowReport(
