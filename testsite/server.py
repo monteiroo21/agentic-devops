@@ -237,7 +237,12 @@ PEDALMAP_ROUTES = {
 
 # The comments mark what each route plants; ground_truth.json has the full answer key
 shop_routes = {
-    "/": shop_page("home.html", "Velo Ribeira | Bike rentals, tours and shop in Porto"),
+    # home.html also plants accessibility defects: images whose alt is "Photo", a file name or the link's own text,
+    # or missing; a "Find out more" link with nothing around it saying where it goes, and a link whose aria-label is
+    # "link"; a Portuguese review with no lang, and Portuguese marked lang="es"; a copy-pasted "Workshop" heading and
+    # VAT small print marked up as an h5; an email field with no label. Decoys: "Click here" explained by its
+    # sentence, Spanish marked lang="es", product photos with an empty alt inside links that name the product
+    "/": shop_page("home.html", "Untitled document"),  # the title was never set
     "/rentals/": shop_page("rentals.html", "Bike rentals in Porto | Velo Ribeira"),
     "/rentals/touring": shop_page("rentals-touring.html", "Touring bike rental | Velo Ribeira"),
     "/tours": Redirect("/tours/"),  # decoy: trailing-slash redirect to the right page

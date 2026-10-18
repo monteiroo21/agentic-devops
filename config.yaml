@@ -1,5 +1,5 @@
 models:
-  gemini: gemini-3.1-flash-lite
+  gemini: gemini-3.5-flash-lite
   ollama: qwen3:4b-instruct
 gemini:
   thinking_level: HIGH

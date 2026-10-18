@@ -47,6 +47,10 @@ section { margin: 2.5rem 0; }
 .price { font-weight: 700; color: var(--ink); }
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
 
+.small-print { font-size: .85rem; font-weight: 400; color: var(--muted); margin: 1rem 0 0; }
+.review { margin: 1.25rem 0 0; padding-left: 1rem; border-left: 3px solid var(--brand); font-style: italic; }
+.signup { display: flex; gap: .5rem; flex-wrap: wrap; }
+
 .post-list { list-style: none; padding: 0; }
 .post-list li { padding: .6rem 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 1rem; }
 .post-list time { color: var(--muted); white-space: nowrap; }
