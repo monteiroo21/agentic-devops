@@ -160,14 +160,9 @@ def link_for_model(link):
     # a link and its check as one object, since the check repeats the link's URL
     return {**compact(link, leave_out=("attribute", "check")), **compact(link["check"], leave_out=("url",))}
 
-def for_model(tool_name, tool_result):
-    if tool_name == "check_url":
-        return compact(tool_result)
-    if tool_name == "check_urls":
-        return [compact(result) for result in tool_result]
-    if tool_name == "check_page_links":
-        links = [link_for_model(link) for link in tool_result["links"]]
-        return {**compact(tool_result, leave_out=("links",)), "links": links}
-    if tool_name == "fetch_page_text":
-        return compact(tool_result, leave_out=() if tool_result["truncated"] else ("truncated",))
-    return tool_result
+def page_links_for_model(page):
+    links = [link_for_model(link) for link in page["links"]]
+    return {**compact(page, leave_out=("links",)), "links": links}
+
+def page_text_for_model(page):
+    return compact(page, leave_out=() if page["truncated"] else ("truncated",))

@@ -6,9 +6,9 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Tool
 from analyzers.base import Analyzer
 from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Verdict, WorkflowReport, answers_schema, list_skills,
-                    skill_body, split_backed, with_ids)
-from tools.links import (check_page_links, check_url, check_urls, compact, fetch_page_text, for_model,
-                         link_for_model)
+                    read_prompt, skill_body, split_backed, with_ids)
+from tools.links import (check_page_links, check_url, check_urls, compact, fetch_page_text, link_for_model,
+                         page_links_for_model, page_text_for_model)
 
 LINKS = CONFIG.links
 SIGN_IN = re.compile(r"\b(log|sign)[ -]?in\b", re.IGNORECASE)
@@ -88,19 +88,6 @@ class LinkNote(BaseModel):
     likely_intentional: bool
     suggested_fix: str | None = None
 
-JUDGE_PROMPT = """
-    You are a web link reviewer. You answer one question at a time about a few links of a web page, or the pages
-    they lead to, using only the information you are given about them.
-
-    For every item, give a short reason and then a verdict:
-    - pass: there is no problem. A few words of reason are enough.
-    - fail: the information shows the problem the question asks about. The reason must say what in the item
-      shows it.
-    - unsure: the information you were given is not enough to decide. If you can't check something, the answer
-      is unsure, never fail.
-    Answer for every id you are given, and only for those.
-"""
-
 class LinkVerdict(BaseModel):
     criterion: str
     id: str
@@ -118,33 +105,6 @@ class LinkWorkflowReport(WorkflowReport):
     verdicts: list[LinkVerdict]  # every link or page judged, passes included
 
 # Agent
-
-def process_tool(tool_name, tool_input):
-    if tool_name == "check_url":
-        return check_url(tool_input["url"])
-    elif tool_name == "check_page_links":
-        return check_page_links(tool_input["url"])
-    elif tool_name == "check_urls":
-        return check_urls(tool_input["urls"])
-    elif tool_name == "fetch_page_text":
-        return fetch_page_text(tool_input["url"])
-    else:
-        raise ValueError(f"Unknown tool: {tool_name}")
-
-def record_result(tool_name, tool_result, link_info, checks, fetched=None):
-    if tool_name == "extract_links":
-        for link in tool_result["links"]:
-            link_info.setdefault(link["url"], {"page": tool_result["final_url"], "tag": link["tag"], "text": link["text"]})
-    elif tool_name == "check_url":
-        checks[tool_result["url"]] = tool_result
-    elif tool_name == "check_urls":
-        for result in tool_result:
-            checks[result["url"]] = result
-    elif tool_name == "check_page_links":
-        record_result("extract_links", tool_result, link_info, checks)
-        record_result("check_urls", [link["check"] for link in tool_result["links"]], link_info, checks)
-    elif tool_name == "fetch_page_text" and fetched is not None:
-        fetched[tool_result["url"]] = tool_result
 
 def build_findings(checks, link_info, notes):
     # notes are the model's comments on the broken links, by URL: the agent's Assessments or the workflow's LinkNotes
@@ -384,7 +344,7 @@ class LinkAnalyzer(Analyzer):
     submission = SubmitReport
     agent_report_type = Report
     workflow_report_type = LinkWorkflowReport
-    judge_prompt = JUDGE_PROMPT
+    judge_prompt = read_prompt(LINKS.prompts / "judge.md")
 
     def __init__(self, args):
         super().__init__(args)
@@ -395,6 +355,16 @@ class LinkAnalyzer(Analyzer):
         self.rejections = {}  # each distinct claim that was sent back, with why and how often
         self.links = []  # the links on the page, for the workflow
         self.pages = {}  # the pages they lead to, for the workflow
+
+    def record_checks(self, results):
+        for result in results:
+            self.checks[result["url"]] = result
+
+    def record_page_links(self, page):
+        for link in page["links"]:
+            self.link_info.setdefault(link["url"],
+                                      {"page": page["final_url"], "tag": link["tag"], "text": link["text"]})
+        self.record_checks([link["check"] for link in page["links"]])
 
     def link_counts(self):
         return dict(
@@ -409,35 +379,10 @@ class LinkAnalyzer(Analyzer):
         rules = ", ".join(FINDING_RULES[:-1])
         read_first = [rule for rule in FINDING_RULES if rule in NEEDS_PAGE_TEXT]
         read_first = ", ".join(read_first[:-1]) + " or " + read_first[-1]
-        return f"""
-        You are a web link analyzer. Your goal is to find every link problem on the page the user gives you,
-        including problems that the status code alone does not reveal.
-
-        Start by calling check_page_links on the URL: it finds every link on the page and checks all of them.
-
-        Comment on the links it found broken, unreachable or blocked in assessments, with the broken-links skill
-        below. A status of 200 only means the server answered. It does not mean the page shows what the link
-        promises: an error page, an empty page or the wrong page can all return 200. So judge every link to a page,
-        internal or external, with each of the other skills. Read every page you cannot confirm from its link text,
-        URL, title and heading alone with fetch_page_text. You can fetch several pages at once.
-
-        Put the problems you found that the status code does not show in agent_findings, using the most specific
-        rule that fits: {rules}, or other for a problem none of them covers. Before reporting a {read_first}
-        finding, read that page with fetch_page_text.
-
-        Only report what the tools showed you. You do not check accessibility, so do not comment on it.
-
-        # Skills
-
-    """
+        return read_prompt(LINKS.prompts / "agent.md", rules=rules, read_first=read_first)
 
     def user_prompt(self):
         return f"Check the links on {self.args.url}"
-
-    def run_tool(self, tool_name, tool_input):
-        tool_result = process_tool(tool_name, tool_input)
-        record_result(tool_name, tool_result, self.link_info, self.checks, self.fetched)
-        return for_model(tool_name, tool_result)
 
     def check_url_tool(self, url: str):
         """Checks whether a single URL works and returns its status code, final URL, redirect chain, content type and
@@ -447,7 +392,9 @@ class LinkAnalyzer(Analyzer):
         Args:
             url: The URL to check.
         """
-        return self.run_tool("check_url", {"url": url})
+        result = check_url(url)
+        self.record_checks([result])
+        return compact(result)
 
     def check_page_links_tool(self, url: str):
         """Finds every link on a web page and checks all of them. Returns each link's text, tag and whether it is
@@ -458,7 +405,9 @@ class LinkAnalyzer(Analyzer):
         Args:
             url: The URL of the web page whose links to check.
         """
-        return self.run_tool("check_page_links", {"url": url})
+        page = check_page_links(url)
+        self.record_page_links(page)
+        return page_links_for_model(page)
 
     def check_urls_tool(self, urls: list[str]):
         """Checks whether multiple URLs work and returns their status code, final URL, redirect chain, content type
@@ -468,7 +417,9 @@ class LinkAnalyzer(Analyzer):
         Args:
             urls: The URLs to check.
         """
-        return self.run_tool("check_urls", {"urls": urls})
+        results = check_urls(urls)
+        self.record_checks(results)
+        return [compact(result) for result in results]
 
     def fetch_page_text_tool(self, url: str):
         """Fetches the title, first heading and a short snippet of visible text from a web page. Empty fields are
@@ -477,7 +428,9 @@ class LinkAnalyzer(Analyzer):
         Args:
             url: The URL of the web page to fetch text from.
         """
-        return self.run_tool("fetch_page_text", {"url": url})
+        page = fetch_page_text(url)
+        self.fetched[page["url"]] = page
+        return page_text_for_model(page)
 
     def tools(self):
         return [Tool(self.check_url_tool, name="check_url"), Tool(self.check_page_links_tool, name="check_page_links"),
@@ -510,7 +463,7 @@ class LinkAnalyzer(Analyzer):
         if page["error"]:
             print(f"=====check_page_links could not check {self.args.url}: {page['error']}=====")
             return False
-        record_result("check_page_links", page, self.link_info, self.checks)
+        self.record_page_links(page)
         self.links = page["links"]
         print(f"=====Checked {len(self.links)} link(s): "
               f"{dict(Counter(check['verdict'] for check in self.checks.values()))}=====")

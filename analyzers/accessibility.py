@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Tool
 from analyzers.base import Analyzer
 from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Note, WorkflowReport, docstring_with, list_skills,
-                    skill_body, split_backed, with_ids, without)
+                    read_prompt, skill_body, split_backed, with_ids, without)
 from tools.axe import axe_for_model, axe_selector, check_messages, run_axe, wcag_number, wcag_tags
 from tools.page_content import content_for_model, get_page_content, item_for_model
 
@@ -72,19 +72,6 @@ class Report(AgentReport):
     axe_version: str | None
     findings: list[Finding]
     unverified: list[dict] = []  # submitted items no tool result backs, kept after the last rejection
-
-JUDGE_PROMPT = """
-    You are a web accessibility reviewer. You judge one WCAG 2.2 criterion at a time for a few elements of a web
-    page, using only the information you are given about them.
-
-    For every element, give a short reason and then a verdict:
-    - pass: it meets the criterion. A few words of reason are enough.
-    - fail: the information shows that it does not. The reason must say what in the element shows the problem.
-    - unsure: the information you were given is not enough to decide. If you can't check something, the answer
-      is unsure, never fail.
-    Only fail what breaks the criterion, not what could merely be better. Answer for every id you are given,
-    and only for those.
-"""
 
 class ElementVerdict(BaseModel):
     criterion: str
@@ -193,17 +180,6 @@ def agent_report_finding(finding):
         suggested_fix=finding.suggested_fix,
     )
 
-def process_tool(tool_name, tool_input):
-    if tool_name == "run_axe":
-        return run_axe(tool_input["url"])
-    elif tool_name == "get_page_content":
-        return get_page_content(tool_input["url"])
-    else:
-        raise ValueError(f"Unknown tool: {tool_name}")
-
-def for_model(tool_name, tool_result):
-    return axe_for_model(tool_result) if tool_name == "run_axe" else content_for_model(tool_result)
-
 def save_axe(axe, args):
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(axe, indent=2))
@@ -281,7 +257,7 @@ class AccessibilityAnalyzer(Analyzer):
     submission = SubmitReport
     agent_report_type = Report
     workflow_report_type = AccessibilityWorkflowReport
-    judge_prompt = JUDGE_PROMPT
+    judge_prompt = read_prompt(ACCESSIBILITY.prompts / "judge.md")
 
     def __init__(self, args):
         super().__init__(args)
@@ -304,37 +280,10 @@ class AccessibilityAnalyzer(Analyzer):
     # Agent
 
     def system_prompt(self):
-        return """
-        You are a web accessibility analyzer. Your goal is to find the accessibility problems on the page the user
-        gives you, measured against WCAG 2.2 levels A and AA, including the ones an automated checker cannot judge.
-
-        Start by calling run_axe and get_page_content on the URL. You can call both at once.
-
-        Judge run_axe's results with the axe-results skill below. axe only checks that things exist, not that they
-        make sense, so also judge what get_page_content returns with each of the other skills, and give each
-        problem you find the name of its skill as its rule.
-
-        Only report what breaks a criterion, not what could merely be better. Only report what the tools showed
-        you, and refer to elements by their selector exactly as the tools returned it. Not being able to check
-        something is a reason for manual-review, never for fail. You do not check whether links work or whether a
-        link's destination matches its text.
-        When you have finished, hand in your report with submit_report: your comments on violations go in
-        assessments, your decisions on needs_review items in reviews, and the problems you found in agent_findings.
-
-        # Skills
-
-    """
+        return read_prompt(ACCESSIBILITY.prompts / "agent.md")
 
     def user_prompt(self):
         return f"Check the accessibility of {self.args.url}"
-
-    def run_tool(self, tool_name, tool_input):
-        tool_result = process_tool(tool_name, tool_input)
-        if tool_name == "run_axe" and tool_result["axe"] is not None:
-            self.axe = tool_result["axe"]
-        elif tool_name == "get_page_content" and tool_result["content"] is not None:
-            self.content = tool_result["content"]
-        return for_model(tool_name, tool_result)
 
     @docstring_with(max_elements_per_rule=ACCESSIBILITY.max_elements_per_rule)
     def run_axe_tool(self, url: str):
@@ -347,7 +296,10 @@ class AccessibilityAnalyzer(Analyzer):
         Args:
             url: The URL of the web page to check.
         """
-        return self.run_tool("run_axe", {"url": url})
+        result = run_axe(url)
+        if result["axe"] is not None:
+            self.axe = result["axe"]
+        return axe_for_model(result)
 
     @docstring_with(max_page_items=ACCESSIBILITY.max_page_items)
     def get_page_content_tool(self, url: str):
@@ -364,7 +316,10 @@ class AccessibilityAnalyzer(Analyzer):
         Args:
             url: The URL of the web page to read.
         """
-        return self.run_tool("get_page_content", {"url": url})
+        result = get_page_content(url)
+        if result["content"] is not None:
+            self.content = result["content"]
+        return content_for_model(result)
 
     def tools(self):
         return [Tool(self.run_axe_tool, name="run_axe"), Tool(self.get_page_content_tool, name="get_page_content")]

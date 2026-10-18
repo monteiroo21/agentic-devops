@@ -39,6 +39,7 @@ class AgentConfig(Section):
     max_text_replies: int
     max_invalid_reports: int
     max_tool_retries: int
+    max_requests: int
 
 class WorkflowConfig(Section):
     batch_size: int
@@ -46,6 +47,7 @@ class WorkflowConfig(Section):
 
 class AccessibilityConfig(Section):
     skills: Path
+    prompts: Path
     axe_script: Path
     wcag_tags: list[str]
     max_elements_per_rule: int
@@ -58,6 +60,7 @@ class AccessibilityConfig(Section):
 
 class LinksConfig(Section):
     skills: Path
+    prompts: Path
     timeout_s: float
     user_agent: str
     max_page_bytes: int
@@ -76,8 +79,10 @@ class Config(Section):
 def load_config(path=CONFIG_PATH):
     config = Config.model_validate(yaml.safe_load(path.read_text()))
     config.accessibility.skills = path.parent / config.accessibility.skills
+    config.accessibility.prompts = path.parent / config.accessibility.prompts
     config.accessibility.axe_script = path.parent / config.accessibility.axe_script
     config.links.skills = path.parent / config.links.skills
+    config.links.prompts = path.parent / config.links.prompts
     return config
 
 CONFIG = load_config()
@@ -230,6 +235,10 @@ def skill_body(skill):
 
 def skills_prompt(skills):
     return "\n\n".join(f"## {skill.name}\n{skill.description}\n\n{skill_body(skill)}" for skill in skills.values())
+
+def read_prompt(path, **values):
+    # a prompt from the prompts folder, with its {placeholders} filled in
+    return path.read_text().strip().format(**values)
 
 # Agent: what the analyzers' tools and evidence checks share
 

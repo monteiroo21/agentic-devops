@@ -4,7 +4,7 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pydantic_ai import (Agent, ModelRetry, RetryPromptPart, ToolOutput, ToolReturnPart, UnexpectedModelBehavior,
-                         UsageLimitExceeded)
+                         UsageLimitExceeded, UsageLimits)
 from analyzers import ANALYZERS
 from chat_backends import read_response
 from common import (CONFIG, make_parser, model_and_settings, model_name, parse_args, report_fields, report_path,
@@ -65,7 +65,8 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
     async def run():
         # Tools run one at a time, in the order the model called them
         with agent.parallel_tool_call_execution_mode("sequential"):
-            async with agent.iter(user_prompt) as agent_run:
+            usage_limits = UsageLimits(request_limit=limits.max_requests)
+            async with agent.iter(user_prompt, usage_limits=usage_limits) as agent_run:
                 async for node in agent_run:
                     if Agent.is_call_tools_node(node):
                         # the model has replied, and its tool calls haven't run yet
@@ -92,7 +93,7 @@ def main():
     args = parse_args(make_parser("Find problems on a web page with an agent that calls the tools itself and hands "
                                   "in one report.", ANALYZERS))
     analyzer = ANALYZERS[args.analyzer](args)
-    system_prompt = analyzer.system_prompt() + skills_prompt(analyzer.skills)
+    system_prompt = f"{analyzer.system_prompt()}\n\n# Skills\n\n{skills_prompt(analyzer.skills)}"
 
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
