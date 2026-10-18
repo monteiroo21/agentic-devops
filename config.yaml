@@ -1,0 +1,37 @@
+models:
+  gemini: gemini-3.1-flash-lite
+  ollama: qwen3:4b-instruct
+gemini:
+  thinking_level: HIGH
+ollama:
+  url: http://localhost:11434/v1
+  max_output_tokens: 4096
+
+agent:
+  max_rejections: 2
+  max_text_replies: 2
+  max_invalid_reports: 3
+  max_tool_retries: 2
+workflow:
+  batch_size: 8
+  max_retries: 2
+
+accessibility:
+  skills: skills/accessibility
+  axe_script: node_modules/axe-core/axe.min.js
+  wcag_tags: [wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa]
+  max_elements_per_rule: 10
+  max_page_items: 50
+  max_text_chars: 2000
+  max_html_chars: 300
+  max_violation_examples: 3
+  max_title_headings: 5
+  max_title_text_chars: 500
+
+links:
+  skills: skills/links
+  timeout_s: 10
+  user_agent: Mozilla/5.0 (compatible; link-analyzer/0.1)
+  max_page_bytes: 524288
+  max_page_text_chars: 2000
+  workflow_page_text_chars: 600

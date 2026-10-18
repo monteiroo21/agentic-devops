@@ -1,67 +1,140 @@
 import argparse
-import json
 import re
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Literal
 from urllib.parse import urlparse
+import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ValidationError
-from chat_backends import GeminiChat, OllamaChat
+from pydantic import BaseModel, ConfigDict
+from chat_backends import make_model
+import logfire
 
 load_dotenv()
+logfire.configure(send_to_logfire="if-token-present")
+logfire.instrument_pydantic_ai()
+logfire.instrument_httpx()
+
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+class Section(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+class ModelsConfig(Section):
+    gemini: str
+    ollama: str
+
+class GeminiConfig(Section):
+    thinking_level: str
+
+class OllamaConfig(Section):
+    url: str
+    max_output_tokens: int
+
+class AgentConfig(Section):
+    max_rejections: int
+    max_text_replies: int
+    max_invalid_reports: int
+    max_tool_retries: int
+
+class WorkflowConfig(Section):
+    batch_size: int
+    max_retries: int
+
+class AccessibilityConfig(Section):
+    skills: Path
+    axe_script: Path
+    wcag_tags: list[str]
+    max_elements_per_rule: int
+    max_page_items: int
+    max_text_chars: int
+    max_html_chars: int
+    max_violation_examples: int
+    max_title_headings: int
+    max_title_text_chars: int
+
+class LinksConfig(Section):
+    skills: Path
+    timeout_s: float
+    user_agent: str
+    max_page_bytes: int
+    max_page_text_chars: int
+    workflow_page_text_chars: int
+
+class Config(Section):
+    models: ModelsConfig
+    gemini: GeminiConfig
+    ollama: OllamaConfig
+    agent: AgentConfig
+    workflow: WorkflowConfig
+    accessibility: AccessibilityConfig
+    links: LinksConfig
+
+def load_config(path=CONFIG_PATH):
+    config = Config.model_validate(yaml.safe_load(path.read_text()))
+    config.accessibility.skills = path.parent / config.accessibility.skills
+    config.accessibility.axe_script = path.parent / config.accessibility.axe_script
+    config.links.skills = path.parent / config.links.skills
+    return config
+
+CONFIG = load_config()
 
 # Command line and model
 
-DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "ollama": "qwen3:4b-instruct"}
-DEFAULT_MAX_OUTPUT_TOKENS = 4096
-
-def make_parser(description, workflow=False):
+def make_parser(description, analyzers, workflow=False):
+    # one command per analyzer, e.g. agent.py links URL
+    models = CONFIG.models.model_dump()
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("url", help="the page to check")
-    parser.add_argument("--backend", choices=DEFAULT_MODELS, default="gemini",
-                        help="gemini (Google's API) or ollama (a local model)")
-    parser.add_argument("--model", help="the model to use; defaults to "
-                        + ", ".join(f"{model} for {backend}" for backend, model in DEFAULT_MODELS.items()))
-    parser.add_argument("--no-think", action="store_true",
-                        help="ollama only: answer without thinking first, which is much faster on a CPU")
-    parser.add_argument("--max-output-tokens", type=int, default=DEFAULT_MAX_OUTPUT_TOKENS,
-                        help="ollama only: the most tokens the model may write per turn, thinking included "
-                             f"(default {DEFAULT_MAX_OUTPUT_TOKENS})")
-    if workflow:
-        parser.add_argument("--batch-size", type=int, default=8,
-                            help="how many elements the model judges in one call (default 8)")
+    commands = parser.add_subparsers(dest="analyzer", required=True, metavar="analyzer")
+    for analyzer in analyzers.values():
+        command = commands.add_parser(analyzer.name, help=analyzer.description, description=analyzer.description)
+        command.add_argument("url", help="the page to check")
+        command.add_argument("--backend", choices=models, default="gemini",
+                             help="gemini (Google's API) or ollama (a local model)")
+        command.add_argument("--model", help="the model to use; defaults to "
+                             + ", ".join(f"{model} for {backend}" for backend, model in models.items()))
+        command.add_argument("--no-think", action="store_true",
+                             help="ollama only: answer without thinking first, which is much faster on a CPU")
+        command.add_argument("--max-output-tokens", type=int, default=CONFIG.ollama.max_output_tokens,
+                             help="ollama only: the most tokens the model may write per turn, thinking included "
+                                  f"(default {CONFIG.ollama.max_output_tokens})")
+        if workflow:
+            command.add_argument("--batch-size", type=int, default=CONFIG.workflow.batch_size,
+                                 help="how many elements the model judges in one call "
+                                      f"(default {CONFIG.workflow.batch_size})")
+        analyzer.add_arguments(command)
     return parser
 
 def parse_args(parser):
     args = parser.parse_args()
     if urlparse(args.url).scheme not in ("http", "https"):
         parser.error(f"the URL must start with http:// or https://, got {args.url!r}")
-    if args.backend == "gemini" and (args.no_think or args.max_output_tokens != DEFAULT_MAX_OUTPUT_TOKENS):
+    if args.backend == "gemini" and (args.no_think or args.max_output_tokens != CONFIG.ollama.max_output_tokens):
         parser.error("--no-think and --max-output-tokens only work with --backend ollama")
     if getattr(args, "batch_size", 1) < 1:
         parser.error("--batch-size must be at least 1")
     return args
 
-def make_chat(args, system_prompt, tools):
-    model = args.model or DEFAULT_MODELS[args.backend]
-    if args.backend == "ollama":
-        return OllamaChat(model, system_prompt, tools, think=not args.no_think,
-                          max_output_tokens=args.max_output_tokens)
-    return GeminiChat(model, system_prompt, tools)
+def model_name(args):
+    return args.model or getattr(CONFIG.models, args.backend)
+
+def model_and_settings(args):
+    return make_model(args.backend, model_name(args), think=not args.no_think,
+                      max_output_tokens=args.max_output_tokens, ollama_url=CONFIG.ollama.url,
+                      thinking_level=CONFIG.gemini.thinking_level)
 
 # Reports
 
 def slug(text):
     return re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
 
-def report_path(prefix, model, args):
+def report_path(prefix, args):
     url = urlparse(args.url)
     page = slug(url.path)  # e.g. blog-douro-valley-3-day-itinerary, empty for the homepage
-    name = (model.replace(':', '-').replace('/', '-') + ("_no-think" if args.no_think else "")
+    name = (model_name(args).replace(':', '-').replace('/', '-') + ("_no-think" if args.no_think else "")
             + "_" + slug(url.netloc) + (f"_{page}" if page else "")
             + "_" + datetime.now().strftime("%Y%m%d-%H%M%S"))
     path = Path("reports") / f"{prefix}_{name}.json"
@@ -94,11 +167,11 @@ class WorkflowReport(BaseReport):
     batch_size: int
     criteria: dict[str, dict[str, int]]  # per criterion: elements, each verdict, omitted_first, invented
 
-def report_fields(args, chat, started_at, start, usage):
+def report_fields(args, started_at, start, usage):
     # what every report starts with: the run, and what the model used
     return dict(
         target=args.url,
-        model=chat.model,
+        model=model_name(args),
         thinking=not args.no_think,
         started_at=started_at,
         duration_s=round(time.perf_counter() - start, 1),
@@ -108,10 +181,63 @@ def report_fields(args, chat, started_at, start, usage):
         truncated_replies=usage["truncated_replies"],
     )
 
-# Agent: the model calls the tools itself and submits one report
+# Skills: what each criterion means and how to judge it, in skills/<analyzer>/<name>/SKILL.md
 
-MAX_REJECTIONS = 2  # times a report with unbacked items is sent back
-MAX_TEXT_REPLIES = 2  # times the model is asked to call a tool instead of writing text
+FRONTMATTER = re.compile(r"---\n(.*?)\n---\n?(.*)", re.DOTALL)
+
+@dataclass
+class Skill:
+    name: str
+    description: str
+    metadata: dict[str, str]  # the skills format only allows strings, so a list is separated by spaces
+    path: Path
+
+    def values(self, key):
+        return self.metadata.get(key, "").split()
+
+    def flag(self, key):
+        return self.metadata.get(key) == "true"
+
+    def rules(self):
+        if not self.metadata:
+            return []
+        return self.values("rules") or [self.name]
+
+def read_skill(path):
+    match = FRONTMATTER.match(path.read_text())
+    if match is None:
+        raise ValueError(f"{path} doesn't start with a frontmatter between --- lines")
+    return yaml.safe_load(match.group(1)) or {}, match.group(2).strip()
+
+def list_skills(folder):
+    skills = {}
+    for path in sorted(folder.glob("*/SKILL.md")):
+        front, _ = read_skill(path)
+        metadata = front.get("metadata") or {}
+        if front.get("name") != path.parent.name:
+            raise ValueError(f"{path}: its name, {front.get('name')!r}, must be the name of its folder")
+        if not front.get("description"):
+            raise ValueError(f"{path} has no description")
+        if not all(isinstance(value, str) for value in metadata.values()):
+            raise ValueError(f"{path}: every metadata value must be a string")
+        skills[front["name"]] = Skill(front["name"], front["description"], metadata, path)
+    if not skills:
+        raise ValueError(f"no skills in {folder}")
+    return skills
+
+def skill_body(skill):
+    return read_skill(skill.path)[1]
+
+def skills_prompt(skills):
+    return "\n\n".join(f"## {skill.name}\n{skill.description}\n\n{skill_body(skill)}" for skill in skills.values())
+
+# Agent: what the analyzers' tools and evidence checks share
+
+def docstring_with(**values):
+    def fill(function):
+        function.__doc__ = function.__doc__.format(**values)
+        return function
+    return fill
 
 def split_backed(items, kind, problem_of):
     backed, unverified = [], []
@@ -123,76 +249,7 @@ def split_backed(items, kind, problem_of):
             backed.append(item)
     return backed, unverified
 
-def run_agent(chat, run_tool, submission, review, reject):
-    # Lets the model call tools until it submits a report. run_tool runs any other tool and returns what the
-    # model sees, review lists the submitted items no tool result backs, and reject says why they were sent back
-    usage = Counter()
-    submitted = None
-
-    while True:
-        turn = chat.generate()
-
-        if turn.thoughts:
-            print(f"\n====={chat.model}'s thoughts=====\n{turn.thoughts}\n")
-        if turn.text:
-            print(f"\n====={chat.model} says=====\n{turn.text}\n")
-
-        usage.update(llm_requests=1, input_tokens=turn.input_tokens, output_tokens=turn.output_tokens,
-                     truncated_replies=int(turn.truncated))
-
-        if turn.truncated:
-            print(f"====={chat.model} was cut off at the output token limit=====")
-
-        if not turn.tool_calls:
-            if usage["text_replies"] >= MAX_TEXT_REPLIES:
-                print(f"====={chat.model} has no more function calls=====")
-                break
-            # Local models can't be forced to call a tool, and small ones sometimes write the report as text
-            usage["text_replies"] += 1
-            print(f"=====No tool call, asking {chat.model} to call a tool=====")
-            chat.add_user_message("You replied with text, but only tool calls are acted on. If you have finished, "
-                                  "hand in your report by calling the submit_report tool; otherwise call the tool "
-                                  "you need next. Do not write the report as text.")
-            continue
-
-        # Answer every tool call in this response, not just the last one
-        results = []
-        for call in sorted(turn.tool_calls, key=lambda call: call.name == "submit_report"):
-            print(f"====={chat.model} wants to use the {call.name} tool=====")
-
-            if call.name != "submit_report":
-                result = run_tool(call.name, call.args)
-            else:
-                try:
-                    report = submission.model_validate(call.args)
-                except ValidationError as e:
-                    result = {"error": f"Invalid report, fix it and call submit_report again: {e}"}
-                else:
-                    unverified = review(report)
-                    if not unverified or usage["rejected_submissions"] >= MAX_REJECTIONS:
-                        submitted = report
-                        continue
-                    # Send the report back: the agent must look before it claims
-                    usage.update(rejected_submissions=1, unbacked_claims=len(unverified))
-                    print(f"=====Report rejected: {len(unverified)} unbacked item(s)=====")
-                    result = {"error": reject(unverified)}
-
-            print(f"=====Result of {call.name}=====\n{json.dumps(result, indent=2, ensure_ascii=False)}\n")
-            results.append((call, result))
-
-        if submitted is not None:
-            print(f"====={chat.model} has submitted the final report=====")
-            break
-
-        chat.add_tool_results(results)
-
-    if submitted is None:
-        print("=====No valid report was submitted=====")
-    return submitted, usage
-
-# Workflow: the script runs the tools and asks the model about a few elements at a time
-
-MAX_RETRIES = 2  # times a batch is asked again about the elements its answer left out
+# Workflow: the answers the analyzers ask for, and how they are counted
 
 def answers_schema(key, properties, required):
     return {
@@ -227,87 +284,11 @@ class Note(BaseModel):
 
 VERDICT_SEVERITY = {"pass": "info", "fail": "warning", "unsure": "needs-review", "unanswered": "needs-review"}
 
-@dataclass
-class Task:
-    criterion: str  # what the model judges, e.g. alt-text or soft-404
-    instructions: str
-    items: list[dict]  # what the model sees about each element, with its id
-    answer: type = Verdict
-    batched: bool = True  # False when the model needs every item at once, like a heading outline
-
 def with_ids(items, prefix):
     return [(f"{prefix}-{number}", item) for number, item in enumerate(items, 1)]
 
 def without(item, *keys):
     return {key: value for key, value in item.items() if key not in keys}
-
-def add_task(tasks, elements, criterion, instructions, entries, **options):
-    # entries are (id, what the model sees, what the report keeps)
-    for element_id, _, kept in entries:
-        elements[element_id] = {"criterion": criterion, **kept}
-    if entries:
-        tasks.append(Task(criterion, instructions,
-                          [{"id": element_id, **shown} for element_id, shown, _ in entries], **options))
-
-def batches(task, size):
-    if not task.batched:
-        return [task.items]
-    return [task.items[start:start + size] for start in range(0, len(task.items), size)]
-
-def ask(chat, task, items, usage):
-    # asks about items until each has a valid answer or the retries run out
-    key, schema = task.answer.FORMAT
-    asked = {item["id"] for item in items}
-    answers, omitted, invented = {}, [], []
-    pending = items
-    for attempt in range(1 + MAX_RETRIES):
-        if attempt:
-            print(f"=====Asking again about {len(pending)} element(s) left out=====")
-        reply = chat.ask_json(task.instructions + "\n\n" + json.dumps(pending, ensure_ascii=False, indent=1), schema)
-        usage.update(llm_requests=1, input_tokens=reply.input_tokens, output_tokens=reply.output_tokens,
-                     truncated_replies=int(reply.truncated))
-        if reply.thoughts:
-            print(f"====={chat.model}'s thoughts=====\n{reply.thoughts}\n")
-
-        returned = reply.data.get(key) if isinstance(reply.data, dict) else None
-        if not isinstance(returned, list):
-            usage["invalid_replies"] += 1
-            print(f"=====Not an answer in the expected format=====\n{reply.text}\n")
-            returned = []
-        for raw in returned:
-            try:
-                answer = task.answer.model_validate(raw)
-            except ValidationError:
-                continue  # an answer that doesn't follow the format counts as no answer
-            if answer.id not in asked:
-                invented.append(answer.id)
-            elif answer.id not in answers:
-                answers[answer.id] = answer
-                print(f"{answer.id}: " + (f"{answer.verdict} | {answer.reason}" if isinstance(answer, Verdict)
-                                          else answer.note))
-
-        pending = [item for item in pending if item["id"] not in answers]
-        if attempt == 0:
-            omitted = [item["id"] for item in pending]
-        if not pending:
-            break
-    return answers, omitted, invented
-
-@dataclass
-class Answers:
-    by_id: dict = field(default_factory=dict)  # each element's valid answer
-    omitted: set = field(default_factory=set)  # ids left out of the model's first answer for their batch
-    invented: Counter = field(default_factory=Counter)  # ids the model made up, per criterion
-
-def ask_tasks(chat, tasks, batch_size, usage, answers):
-    for task in tasks:
-        task_batches = batches(task, batch_size)
-        for number, items in enumerate(task_batches, 1):
-            print(f"\n====={task.criterion}: batch {number} of {len(task_batches)}, {len(items)} element(s)=====")
-            batch_answers, batch_omitted, batch_invented = ask(chat, task, items, usage)
-            answers.by_id.update(batch_answers)
-            answers.omitted.update(batch_omitted)
-            answers.invented[task.criterion] += len(batch_invented)
 
 def criteria_counts(verdicts, invented):
     counts = {}
