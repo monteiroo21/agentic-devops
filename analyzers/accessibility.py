@@ -1,15 +1,13 @@
 import json
-import time
-from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic_ai import Tool
-from common import (CONFIG, AgentReport, docstring_with, list_skills, make_parser, parse_args, report_fields,
-                    report_path, run_agent, skills_prompt, split_backed)
-from tools.axe import axe_for_model, axe_selector, run_axe, wcag_tags
-from tools.page_content import content_for_model, get_page_content
+from analyzers.base import Analyzer
+from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Note, WorkflowReport, docstring_with, list_skills,
+                    skill_body, split_backed, with_ids, without)
+from tools.axe import axe_for_model, axe_selector, check_messages, run_axe, wcag_number, wcag_tags
+from tools.page_content import content_for_model, get_page_content, item_for_model
 
 ACCESSIBILITY = CONFIG.accessibility
 
@@ -74,6 +72,34 @@ class Report(AgentReport):
     axe_version: str | None
     findings: list[Finding]
     unverified: list[dict] = []  # submitted items no tool result backs, kept after the last rejection
+
+JUDGE_PROMPT = """
+    You are a web accessibility reviewer. You judge one WCAG 2.2 criterion at a time for a few elements of a web
+    page, using only the information you are given about them.
+
+    For every element, give a short reason and then a verdict:
+    - pass: it meets the criterion. A few words of reason are enough.
+    - fail: the information shows that it does not. The reason must say what in the element shows the problem.
+    - unsure: the information you were given is not enough to decide. If you can't check something, the answer
+      is unsure, never fail.
+    Only fail what breaks the criterion, not what could merely be better. Answer for every id you are given,
+    and only for those.
+"""
+
+class ElementVerdict(BaseModel):
+    criterion: str
+    id: str
+    selector: str | None
+    verdict: str  # pass, fail, unsure, or unanswered when no valid answer came even after asking again
+    reason: str | None = None
+    omitted_first: bool = False  # left out of the model's first answer for its batch
+
+class AccessibilityWorkflowReport(WorkflowReport):
+    axe_version: str | None
+    findings: list[Finding]
+    verdicts: list[ElementVerdict]  # every element judged, passes included
+
+# Agent
 
 def assessment_problem(assessment, axe):
     if axe is None:
@@ -178,20 +204,107 @@ def process_tool(tool_name, tool_input):
 def for_model(tool_name, tool_result):
     return axe_for_model(tool_result) if tool_name == "run_axe" else content_for_model(tool_result)
 
-def make_axe_parser(description, **options):
-    parser = make_parser(description, **options)
-    parser.add_argument("--output", type=Path, default=Path("reports/axe_raw.json"),
-                        help="where to save axe's raw results (default reports/axe_raw.json)")
-    return parser
-
 def save_axe(axe, args):
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(axe, indent=2))
 
-def main():
-    args = parse_args(make_axe_parser("Find accessibility problems on a web page."))
+# Workflow
 
-    system_prompt = """
+def repeated_link_texts(links):
+    groups = {}
+    for link in links:
+        name = link["aria_label"] or link["text"]
+        if name:
+            groups.setdefault(name.casefold(), []).append(link)
+    return [group for group in groups.values() if len({link["href"].rstrip("/") for link in group}) > 1]
+
+def group_for_model(group):
+    text = group[0]["aria_label"] or group[0]["text"]
+    return {"text": text, "links": [
+        {key: value for key, value in {"destination": link["href"], "context": link["context"],
+                                       "heading": link["heading"]}.items() if value and value != text}
+        for link in group]}
+
+def build_findings(axe, elements, answers, omitted):
+    findings, verdicts = [], []
+    if axe is not None:
+        notes = {elements[element_id]["rule"]: answer for element_id, answer in answers.items()
+                 if isinstance(answer, Note)}
+        for rule in axe["violations"]:
+            note = notes.get(rule["id"])
+            for node in rule["nodes"]:
+                findings.append(Finding(
+                    rule=rule["id"],
+                    severity="error",
+                    wcag=wcag_tags(rule),
+                    selector=axe_selector(node),
+                    source="axe",
+                    html=node["html"][:ACCESSIBILITY.max_html_chars],
+                    summary=node.get("failureSummary"),
+                    note=note.note if note else None,
+                    suggested_fix=note.suggested_fix if note else None,
+                ))
+
+    for element_id, element in elements.items():
+        if element["criterion"] == "axe-violations":
+            continue
+        answer = answers.get(element_id)
+        verdict = answer.verdict if answer else "unanswered"
+        verdicts.append(ElementVerdict(
+            criterion=element["criterion"],
+            id=element_id,
+            selector=element["selector"],
+            verdict=verdict,
+            reason=answer.reason if answer else None,
+            omitted_first=element_id in omitted,
+        ))
+        from_axe = element["criterion"] == "axe-needs-review"
+        if verdict == "pass" and not from_axe:
+            continue  # passes stay in verdicts; every element axe left undecided is a finding, as in the agent
+        findings.append(Finding(
+            rule=element["rule"] if from_axe else element["criterion"],
+            severity=VERDICT_SEVERITY[verdict],
+            wcag=element["wcag"] if from_axe else WCAG_FOR_RULE[element["criterion"]],
+            selector=element["selector"],
+            source="axe" if from_axe else "model",
+            html=element.get("html"),
+            summary=element.get("summary"),
+            verdict=verdict,
+            evidence=answer.reason if answer else None,
+        ))
+    return findings, verdicts
+
+class AccessibilityAnalyzer(Analyzer):
+    name = "accessibility"
+    description = "Find accessibility problems on a web page."
+    skills = SKILLS
+    submission = SubmitReport
+    agent_report_type = Report
+    workflow_report_type = AccessibilityWorkflowReport
+    judge_prompt = JUDGE_PROMPT
+
+    def __init__(self, args):
+        super().__init__(args)
+        # What the tools found, filled in during the run: the latest successful result of each
+        self.axe = None
+        self.content = None
+
+    @staticmethod
+    def add_arguments(parser):
+        parser.add_argument("--output", type=Path, default=Path("reports/axe_raw.json"),
+                            help="where to save axe's raw results (default reports/axe_raw.json)")
+
+    def finish(self):
+        if self.axe is not None:
+            save_axe(self.axe, self.args)
+
+    def axe_version(self):
+        return self.axe["testEngine"]["version"] if self.axe is not None else None
+
+    # Agent
+
+    def system_prompt(self):
+        return """
         You are a web accessibility analyzer. Your goal is to find the accessibility problems on the page the user
         gives you, measured against WCAG 2.2 levels A and AA, including the ones an automated checker cannot judge.
 
@@ -210,23 +323,21 @@ def main():
 
         # Skills
 
-    """ + skills_prompt(SKILLS)
+    """
 
-    # What the tools found, filled in during the run: the latest successful result of each
-    axe = None
-    content = None
+    def user_prompt(self):
+        return f"Check the accessibility of {self.args.url}"
 
-    def run_tool(tool_name, tool_input):
-        nonlocal axe, content
+    def run_tool(self, tool_name, tool_input):
         tool_result = process_tool(tool_name, tool_input)
         if tool_name == "run_axe" and tool_result["axe"] is not None:
-            axe = tool_result["axe"]
+            self.axe = tool_result["axe"]
         elif tool_name == "get_page_content" and tool_result["content"] is not None:
-            content = tool_result["content"]
+            self.content = tool_result["content"]
         return for_model(tool_name, tool_result)
 
     @docstring_with(max_elements_per_rule=ACCESSIBILITY.max_elements_per_rule)
-    def run_axe_tool(url: str):
+    def run_axe_tool(self, url: str):
         """Loads a web page in a headless browser and runs the axe-core automated accessibility checks for WCAG
         levels A and AA on it. Returns the page's status code, the rules the page violates and the rules axe could
         not decide, which need review, each with its impact, WCAG tags and up to {max_elements_per_rule} of the
@@ -236,10 +347,10 @@ def main():
         Args:
             url: The URL of the web page to check.
         """
-        return run_tool("run_axe", {"url": url})
+        return self.run_tool("run_axe", {"url": url})
 
     @docstring_with(max_page_items=ACCESSIBILITY.max_page_items)
-    def get_page_content_tool(url: str):
+    def get_page_content_tool(self, url: str):
         """Loads a web page in a headless browser and returns what a reader sees: its title, the lang attribute of
         the page, the start of its visible main text, its headings in order with the start of the text under each,
         its visible images and links, and the parts of the page that have their own lang attribute, with their text.
@@ -253,42 +364,100 @@ def main():
         Args:
             url: The URL of the web page to read.
         """
-        return run_tool("get_page_content", {"url": url})
+        return self.run_tool("get_page_content", {"url": url})
 
-    tools = [Tool(run_axe_tool, name="run_axe"), Tool(get_page_content_tool, name="get_page_content")]
+    def tools(self):
+        return [Tool(self.run_axe_tool, name="run_axe"), Tool(self.get_page_content_tool, name="get_page_content")]
 
-    def review(report):
-        *_, unverified = check_report(report, axe, content)
+    def review(self, report):
+        *_, unverified = check_report(report, self.axe, self.content)
         return unverified
 
-    started_at = datetime.now(timezone.utc).isoformat()
-    start = time.perf_counter()
-    submitted, usage = run_agent(args, system_prompt, f"Check the accessibility of {args.url}", tools, SubmitReport,
-                                 review, unbacked_message)
+    def reject(self, unverified):
+        return unbacked_message(unverified)
 
-    if axe is not None:
-        save_axe(axe, args)
+    def agent_report(self, submitted):
+        assessments, reviews, agent_findings, unverified = check_report(submitted, self.axe, self.content)
+        findings = ((axe_report_findings(self.axe, assessments, reviews) if self.axe is not None else [])
+                    + [agent_report_finding(f) for f in agent_findings])
+        return findings, dict(axe_version=self.axe_version(), unverified=unverified)
 
-    if submitted is None:
-        return
+    # Workflow
 
-    assessments, reviews, agent_findings, unverified = check_report(submitted, axe, content)
-    findings = ((axe_report_findings(axe, assessments, reviews) if axe is not None else [])
-                + [agent_report_finding(f) for f in agent_findings])
-    report = Report(
-        **report_fields(args, started_at, start, usage),
-        counts=dict(Counter(f.severity for f in findings)),
-        narrative=submitted.narrative,
-        rejected_submissions=usage["rejected_submissions"],
-        unbacked_claims=usage["unbacked_claims"],
-        text_replies=usage["text_replies"],
-        axe_version=axe["testEngine"]["version"] if axe is not None else None,
-        findings=findings,
-        unverified=unverified,
-    )
-    path = report_path("accessibility", args)
-    path.write_text(report.model_dump_json(indent=2))
-    print(f"=====Report saved to {path}=====")
+    def collect(self):
+        axe_result = run_axe(self.args.url)
+        content_result = get_page_content(self.args.url)
+        for tool_name, result in (("run_axe", axe_result), ("get_page_content", content_result)):
+            if result["error"]:
+                print(f"====={tool_name} could not load {self.args.url}: {result['error']}=====")
+        self.axe, self.content = axe_result["axe"], content_result["content"]
+        return self.axe is not None or self.content is not None
 
-if __name__ == "__main__":
-    main()
+    def instructions(self, skill_name, ids):
+        skill = SKILLS[skill_name]
+        criterion = ""
+        if skill.values("wcag"):
+            numbers = " and ".join(wcag_number(tag) for tag in skill.values("wcag"))
+            criterion = f"Criterion: {skill.name} (WCAG {numbers}). "
+        return f"{criterion}{ids}\n{skill_body(skill)}"
+
+    def ask_questions(self, questions):
+        add = questions.ask
+        axe, content = self.axe, self.content
+
+        if axe is not None:
+            html_chars = ACCESSIBILITY.max_html_chars
+            add("axe-violations", "Each id is a rule that axe-core found violated, with a few of the elements "
+                                  "involved. Write a note for each id.", [
+                (element_id, {"rule": rule["id"], "help": rule["help"], "elements_total": len(rule["nodes"]),
+                              "examples": [{"html": node["html"][:html_chars], "problems": check_messages(node)}
+                                           for node in rule["nodes"][:ACCESSIBILITY.max_violation_examples]]},
+                 {"rule": rule["id"]})
+                for element_id, rule in with_ids(axe["violations"], "violation")], skill="axe-results", answer=Note)
+            to_review = [(rule, node) for rule in axe["incomplete"] for node in rule["nodes"]]
+            add("axe-needs-review", "Each id is an element that axe-core could not decide, with the rule it was "
+                                    "checked against. Answer pass or fail only if the information here shows which; "
+                                    "otherwise answer unsure.", [
+                (element_id, {"rule": rule["id"], "help": rule["help"], "html": node["html"][:html_chars],
+                              "problems": check_messages(node)},
+                 {"rule": rule["id"], "wcag": wcag_tags(rule), "selector": axe_selector(node),
+                  "html": node["html"][:html_chars], "summary": node.get("failureSummary")})
+                for element_id, (rule, node) in with_ids(to_review, "review")], skill="axe-results")
+
+        if content is not None:
+            add("alt-text", "Each id is an image.", [
+                (element_id, item_for_model(without(image, "selector"), "link_text"), {"selector": image["selector"]})
+                for element_id, image in with_ids(content["images"], "img")])
+            # no destinations here: whether a link leads where it says is the link checker's job
+            add("link-purpose", "Each id is a link.", [
+                (element_id, item_for_model(without(link, "selector", "href"), "text"),
+                 {"selector": link["selector"]})
+                for element_id, link in with_ids(content["links"], "link")])
+            add("link-purpose", "Each id is a group of links with the same text that lead to different places.", [
+                (element_id, group_for_model(group), {"selector": ", ".join(link["selector"] for link in group)})
+                for element_id, group in with_ids(repeated_link_texts(content["links"]), "repeat")])
+            add("page-title", 'The id "title" is the page, with its title, first headings and the start of its '
+                              'text.', [
+                ("title", {"title": content["title"],
+                           "headings": [heading["text"]
+                                        for heading in content["headings"][:ACCESSIBILITY.max_title_headings]],
+                           "text": content["text"][:ACCESSIBILITY.max_title_text_chars]},
+                 {"selector": None})])
+            add("page-language", 'The id "lang" is the page, with its lang and the start of its text. The other ids '
+                                 'are the parts of it that have their own lang.',
+                [("lang", item_for_model({"lang": content["lang"],
+                                          "text": content["text"][:ACCESSIBILITY.max_text_chars]}, "text"),
+                  {"selector": None})]
+                + [(element_id, without(part, "selector"), {"selector": part["selector"]})
+                   for element_id, part in with_ids(content["parts"], "part")],
+                batched=False)
+            add("heading", "Each id is a heading.", [
+                (element_id, item_for_model(without(heading, "selector"), "text"),
+                 {"selector": heading["selector"]})
+                for element_id, heading in with_ids(content["headings"], "h")],
+                batched=False)
+
+    def workflow_report(self, questions):
+        findings, verdicts = build_findings(self.axe, questions.elements, questions.answers.by_id,
+                                            questions.answers.omitted)
+        return findings, verdicts, dict(axe_version=self.axe_version())

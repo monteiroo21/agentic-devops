@@ -1,15 +1,17 @@
-import time
+import re
 from collections import Counter
-from datetime import datetime, timezone
-from typing import Literal
+from typing import ClassVar, Literal
 from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 from pydantic_ai import Tool
-from common import (CONFIG, AgentReport, list_skills, make_parser, parse_args, report_fields, report_path, run_agent,
-                    skills_prompt, split_backed)
-from tools.links import check_page_links, check_url, check_urls, fetch_page_text, for_model
+from analyzers.base import Analyzer
+from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Verdict, WorkflowReport, answers_schema, list_skills,
+                    skill_body, split_backed, with_ids)
+from tools.links import (check_page_links, check_url, check_urls, compact, fetch_page_text, for_model,
+                         link_for_model)
 
 LINKS = CONFIG.links
+SIGN_IN = re.compile(r"\b(log|sign)[ -]?in\b", re.IGNORECASE)
 
 class Assessment(BaseModel):
     url: str = Field(description="The link this comment is about.")
@@ -73,6 +75,49 @@ class Report(AgentReport):
     findings: list[Finding]
     unverified: list[dict] = []  # submitted items no tool result backs, kept after the last rejection
     rejected_claims: list[RejectedClaim] = []  # each distinct claim that was sent back, and its outcome
+
+class LinkNote(BaseModel):
+    FORMAT: ClassVar = ("notes", answers_schema("notes", {
+        "id": {"type": "string"},
+        "note": {"type": "string"},
+        "likely_intentional": {"type": "boolean"},
+        "suggested_fix": {"type": "string"},
+    }, ["id", "note", "likely_intentional"]))
+    id: str
+    note: str
+    likely_intentional: bool
+    suggested_fix: str | None = None
+
+JUDGE_PROMPT = """
+    You are a web link reviewer. You answer one question at a time about a few links of a web page, or the pages
+    they lead to, using only the information you are given about them.
+
+    For every item, give a short reason and then a verdict:
+    - pass: there is no problem. A few words of reason are enough.
+    - fail: the information shows the problem the question asks about. The reason must say what in the item
+      shows it.
+    - unsure: the information you were given is not enough to decide. If you can't check something, the answer
+      is unsure, never fail.
+    Answer for every id you are given, and only for those.
+"""
+
+class LinkVerdict(BaseModel):
+    criterion: str
+    id: str
+    url: str  # the link, or for soft-404 the page the links lead to
+    verdict: str  # pass, fail, unsure, or unanswered when no valid answer came even after asking again
+    reason: str | None = None
+    omitted_first: bool = False  # left out of the model's first answer for its batch
+
+class LinkWorkflowReport(WorkflowReport):
+    link_checks: dict[str, int]  # links per check verdict: ok, redirect, broken, blocked, unreachable
+    links_found: int  # unique links found on the page
+    links_checked: int  # how many of those were checked; should equal links_found
+    pages_read: int  # pages the links lead to, read with fetch_page_text for the soft-404 question
+    findings: list[Finding]
+    verdicts: list[LinkVerdict]  # every link or page judged, passes included
+
+# Agent
 
 def process_tool(tool_name, tool_input):
     if tool_name == "check_url":
@@ -239,13 +284,132 @@ def rejection_outcomes(rejections, final_findings, checks, fetched):
                                       read_afterwards=read_afterwards, outcome=outcome))
     return rejected
 
-def main():
-    args = parse_args(make_parser("Find link problems on a web page."))
+# Workflow
 
-    rules = ", ".join(FINDING_RULES[:-1])
-    read_first = [rule for rule in FINDING_RULES if rule in NEEDS_PAGE_TEXT]
-    read_first = ", ".join(read_first[:-1]) + " or " + read_first[-1]
-    system_prompt = f"""
+def leads_to_page(link):
+    # a working link to an HTML page, whose destination can be judged
+    check = link["check"]
+    return link["tag"] == "a" and check["verdict"] in ("ok", "redirect") and check["content_type"] == "text/html"
+
+def pages_to_read(links):
+    # the pages the links lead to, each with the links that end on it
+    pages = {}
+    for link in links:
+        if leads_to_page(link):
+            pages.setdefault(link["check"]["final_url"], []).append(link["url"])
+    return pages
+
+def redirect_rule(link, checks):
+    # where a redirect that fails ended
+    check = link["check"]
+    if ends_on_homepage(link["url"], checks, {}):
+        return "redirect-to-homepage"
+    if SIGN_IN.search(urlparse(check["final_url"]).path) or SIGN_IN.search(check["title"] or ""):
+        return "redirect-to-login"
+    return "other"
+
+def broken_entries(links):
+    broken = [link for link in links if link["check"]["verdict"] in ("broken", "unreachable", "blocked")]
+    return [(element_id, link_for_model(link), {"url": link["url"]})
+            for element_id, link in with_ids(broken, "broken")]
+
+def soft_404_entries(pages, fetched):
+    read = [(url, fetched[url]) for url in pages if fetched[url]["text"] is not None]
+    return [(element_id,
+             compact({**page, "text": page["text"][:LINKS.workflow_page_text_chars]},
+                     leave_out=("content_type", "truncated")),
+             {"url": url, "links": pages[url], "rule": "soft-404"})
+            for element_id, (url, page) in with_ids(read, "page")]
+
+def redirect_entries(links, checks, failed):
+    redirected = [link for link in links if link["tag"] == "a" and link["check"]["verdict"] == "redirect"
+                  and link["url"] not in failed]
+    return [(element_id, link_for_model(link),
+             {"url": link["url"], "links": [link["url"]], "rule": redirect_rule(link, checks)})
+            for element_id, link in with_ids(redirected, "redirect")]
+
+def text_mismatch_entries(links, failed):
+    named = [link for link in links if leads_to_page(link) and link["text"] and link["url"] not in failed
+             and (link["check"]["title"] or link["check"]["heading"])]
+    return [(element_id, link_for_model(link), {"url": link["url"], "links": [link["url"]], "rule": "text-mismatch"})
+            for element_id, link in with_ids(named, "link")]
+
+def failed_links(elements, answers):
+    # the links a question has already failed, which the later questions leave out
+    return {url for element_id, answer in answers.by_id.items()
+            if isinstance(answer, Verdict) and answer.verdict == "fail"
+            for url in elements[element_id]["links"]}
+
+def build_report_findings(checks, link_info, elements, answers):
+    notes = {elements[element_id]["url"]: answer for element_id, answer in answers.by_id.items()
+             if isinstance(answer, LinkNote)}
+    findings = build_findings(checks, link_info, notes)
+    verdicts = []
+    for element_id, element in elements.items():
+        if element["criterion"] == "broken-links":
+            continue  # the notes are already on the checker's findings
+        answer = answers.by_id.get(element_id)
+        verdict = answer.verdict if answer else "unanswered"
+        verdicts.append(LinkVerdict(
+            criterion=element["criterion"],
+            id=element_id,
+            url=element["url"],
+            verdict=verdict,
+            reason=answer.reason if answer else None,
+            omitted_first=element_id in answers.omitted,
+        ))
+        if verdict == "pass":
+            continue  # passes stay in verdicts
+        for url in element["links"]:
+            info = link_info.get(url, {})
+            findings.append(Finding(
+                rule=element["rule"],
+                severity=VERDICT_SEVERITY[verdict],
+                page=info.get("page"),
+                url=url,
+                tag=info.get("tag"),
+                text=info.get("text"),
+                status=checks[url]["status"],
+                error=checks[url]["error"],
+                source="model",
+                verdict=verdict,
+                evidence=answer.reason if answer else None,
+            ))
+    return findings, verdicts
+
+class LinkAnalyzer(Analyzer):
+    name = "links"
+    description = "Find link problems on a web page."
+    skills = SKILLS
+    submission = SubmitReport
+    agent_report_type = Report
+    workflow_report_type = LinkWorkflowReport
+    judge_prompt = JUDGE_PROMPT
+
+    def __init__(self, args):
+        super().__init__(args)
+        # What the tools found, filled in during the run
+        self.link_info = {}
+        self.checks = {}
+        self.fetched = {}
+        self.rejections = {}  # each distinct claim that was sent back, with why and how often
+        self.links = []  # the links on the page, for the workflow
+        self.pages = {}  # the pages they lead to, for the workflow
+
+    def link_counts(self):
+        return dict(
+            link_checks=dict(Counter(check["verdict"] for check in self.checks.values())),
+            links_found=len(self.link_info),
+            links_checked=sum(1 for url in self.link_info if url in self.checks),
+        )
+
+    # Agent
+
+    def system_prompt(self):
+        rules = ", ".join(FINDING_RULES[:-1])
+        read_first = [rule for rule in FINDING_RULES if rule in NEEDS_PAGE_TEXT]
+        read_first = ", ".join(read_first[:-1]) + " or " + read_first[-1]
+        return f"""
         You are a web link analyzer. Your goal is to find every link problem on the page the user gives you,
         including problems that the status code alone does not reveal.
 
@@ -265,20 +429,17 @@ def main():
 
         # Skills
 
-    """ + skills_prompt(SKILLS)
+    """
 
-    # What the tools found, filled in during the run
-    link_info = {}
-    checks = {}
-    fetched = {}
-    rejections = {}  # each distinct claim that was sent back, with why and how often
+    def user_prompt(self):
+        return f"Check the links on {self.args.url}"
 
-    def run_tool(tool_name, tool_input):
+    def run_tool(self, tool_name, tool_input):
         tool_result = process_tool(tool_name, tool_input)
-        record_result(tool_name, tool_result, link_info, checks, fetched)
+        record_result(tool_name, tool_result, self.link_info, self.checks, self.fetched)
         return for_model(tool_name, tool_result)
 
-    def check_url_tool(url: str):
+    def check_url_tool(self, url: str):
         """Checks whether a single URL works and returns its status code, final URL, redirect chain, content type and
         any connection error, and for an HTML page its title and first heading. Empty fields are left out, and the
         final URL is only given when it differs from the URL.
@@ -286,9 +447,9 @@ def main():
         Args:
             url: The URL to check.
         """
-        return run_tool("check_url", {"url": url})
+        return self.run_tool("check_url", {"url": url})
 
-    def check_page_links_tool(url: str):
+    def check_page_links_tool(self, url: str):
         """Finds every link on a web page and checks all of them. Returns each link's text, tag and whether it is
         internal or external, with its status code, final URL, redirect chain, content type and any connection
         error, and for a link to an HTML page that page's title and first heading. Empty fields are left out, and the
@@ -297,9 +458,9 @@ def main():
         Args:
             url: The URL of the web page whose links to check.
         """
-        return run_tool("check_page_links", {"url": url})
+        return self.run_tool("check_page_links", {"url": url})
 
-    def check_urls_tool(urls: list[str]):
+    def check_urls_tool(self, urls: list[str]):
         """Checks whether multiple URLs work and returns their status code, final URL, redirect chain, content type
         and any connection error, and for HTML pages their title and first heading. Empty fields are left out, and
         the final URL is only given when it differs from the URL.
@@ -307,61 +468,77 @@ def main():
         Args:
             urls: The URLs to check.
         """
-        return run_tool("check_urls", {"urls": urls})
+        return self.run_tool("check_urls", {"urls": urls})
 
-    def fetch_page_text_tool(url: str):
+    def fetch_page_text_tool(self, url: str):
         """Fetches the title, first heading and a short snippet of visible text from a web page. Empty fields are
         left out, and the final URL is only given when the page redirected.
 
         Args:
             url: The URL of the web page to fetch text from.
         """
-        return run_tool("fetch_page_text", {"url": url})
+        return self.run_tool("fetch_page_text", {"url": url})
 
-    tools = [Tool(check_url_tool, name="check_url"), Tool(check_page_links_tool, name="check_page_links"),
-             Tool(check_urls_tool, name="check_urls"), Tool(fetch_page_text_tool, name="fetch_page_text")]
+    def tools(self):
+        return [Tool(self.check_url_tool, name="check_url"), Tool(self.check_page_links_tool, name="check_page_links"),
+                Tool(self.check_urls_tool, name="check_urls"), Tool(self.fetch_page_text_tool, name="fetch_page_text")]
 
-    def review(report):
-        *_, unverified = check_report(report, checks, fetched)
+    def review(self, report):
+        *_, unverified = check_report(report, self.checks, self.fetched)
         return unverified
 
-    def reject(unverified):
+    def reject(self, unverified):
         for item in unverified:
             if item["kind"] == "agent_finding":
                 claim = AgentFinding.model_validate(item)
-                entry = rejections.setdefault((claim.url, claim.rule), {
-                    "claim": claim, "reason": unbacked_reason(claim, checks, fetched), "times_rejected": 0})
+                entry = self.rejections.setdefault((claim.url, claim.rule), {
+                    "claim": claim, "reason": unbacked_reason(claim, self.checks, self.fetched), "times_rejected": 0})
                 entry["times_rejected"] += 1
         return unbacked_message(unverified)
 
-    started_at = datetime.now(timezone.utc).isoformat()
-    start = time.perf_counter()
-    submitted, usage = run_agent(args, system_prompt, f"Check the links on {args.url}", tools, SubmitReport,
-                                 review, reject)
+    def agent_report(self, submitted):
+        assessments, agent_findings, unverified = check_report(submitted, self.checks, self.fetched)
+        findings = build_findings(self.checks, self.link_info, {a.url: a for a in assessments})
+        findings += build_agent_findings(agent_findings, self.checks, self.fetched, self.link_info, findings)
+        rejected_claims = rejection_outcomes(self.rejections, submitted.agent_findings, self.checks, self.fetched)
+        return findings, dict(**self.link_counts(), unverified=unverified, rejected_claims=rejected_claims)
 
-    if submitted is None:
-        return
+    # Workflow
 
-    assessments, agent_findings, unverified = check_report(submitted, checks, fetched)
-    findings = build_findings(checks, link_info, {a.url: a for a in assessments})
-    findings += build_agent_findings(agent_findings, checks, fetched, link_info, findings)
-    report = Report(
-        **report_fields(args, started_at, start, usage),
-        counts=dict(Counter(f.severity for f in findings)),
-        narrative=submitted.narrative,
-        rejected_submissions=usage["rejected_submissions"],
-        unbacked_claims=usage["unbacked_claims"],
-        text_replies=usage["text_replies"],
-        link_checks=dict(Counter(check["verdict"] for check in checks.values())),
-        links_found=len(link_info),
-        links_checked=sum(1 for url in link_info if url in checks),
-        findings=findings,
-        unverified=unverified,
-        rejected_claims=rejection_outcomes(rejections, submitted.agent_findings, checks, fetched),
-    )
-    path = report_path("links", args)
-    path.write_text(report.model_dump_json(indent=2))
-    print(f"=====Report saved to {path}=====")
+    def collect(self):
+        page = check_page_links(self.args.url)
+        if page["error"]:
+            print(f"=====check_page_links could not check {self.args.url}: {page['error']}=====")
+            return False
+        record_result("check_page_links", page, self.link_info, self.checks)
+        self.links = page["links"]
+        print(f"=====Checked {len(self.links)} link(s): "
+              f"{dict(Counter(check['verdict'] for check in self.checks.values()))}=====")
 
-if __name__ == "__main__":
-    main()
+        self.pages = pages_to_read(self.links)
+        print(f"=====Reading the {len(self.pages)} page(s) the links lead to=====")
+        self.fetched = {url: fetch_page_text(url) for url in self.pages}
+        return True
+
+    def instructions(self, skill_name, ids):
+        return f"{ids}\n{skill_body(SKILLS[skill_name])}"
+
+    def ask_questions(self, questions):
+        # In this order: a link that fails one question is left out of the later ones
+        questions.ask("broken-links", "Each id is a link that the link checker found broken, unreachable or blocked. "
+                                      "Write a note for each id, with likely_intentional saying whether the problem "
+                                      "looks deliberate.",
+                      broken_entries(self.links), answer=LinkNote)
+        questions.ask("soft-404", "Question: soft-404. Each id is a page that a link leads to, and the server answered "
+                                  "it with a working status. Fail a page that is a soft 404.",
+                      soft_404_entries(self.pages, self.fetched))
+        questions.ask("redirect", "Question: redirect. Each id is a link that was redirected and ended on a working "
+                                  "page. Fail a link whose redirect is a problem.",
+                      redirect_entries(self.links, self.checks, failed_links(questions.elements, questions.answers)))
+        questions.ask("text-mismatch", "Question: text-mismatch. Each id is a link to a working page. Fail a link "
+                                       "whose text and destination don't agree.",
+                      text_mismatch_entries(self.links, failed_links(questions.elements, questions.answers)))
+
+    def workflow_report(self, questions):
+        findings, verdicts = build_report_findings(self.checks, self.link_info, questions.elements, questions.answers)
+        return findings, verdicts, dict(**self.link_counts(), pages_read=len(self.fetched))

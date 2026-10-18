@@ -1,20 +1,16 @@
 import argparse
-import asyncio
-import json
 import re
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, Literal
 from urllib.parse import urlparse
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, ValidationError
-from pydantic_ai import (Agent, ModelResponse, ModelRetry, NativeOutput, RetryPromptPart, StructuredDict, ToolOutput,
-                         ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, capture_run_messages)
-from chat_backends import make_model, read_response
+from pydantic import BaseModel, ConfigDict
+from chat_backends import make_model
 import logfire
 
 load_dotenv()
@@ -88,23 +84,28 @@ CONFIG = load_config()
 
 # Command line and model
 
-def make_parser(description, workflow=False):
+def make_parser(description, analyzers, workflow=False):
+    # one command per analyzer, e.g. agent.py links URL
     models = CONFIG.models.model_dump()
     parser = argparse.ArgumentParser(description=description)
-    parser.add_argument("url", help="the page to check")
-    parser.add_argument("--backend", choices=models, default="gemini",
-                        help="gemini (Google's API) or ollama (a local model)")
-    parser.add_argument("--model", help="the model to use; defaults to "
-                        + ", ".join(f"{model} for {backend}" for backend, model in models.items()))
-    parser.add_argument("--no-think", action="store_true",
-                        help="ollama only: answer without thinking first, which is much faster on a CPU")
-    parser.add_argument("--max-output-tokens", type=int, default=CONFIG.ollama.max_output_tokens,
-                        help="ollama only: the most tokens the model may write per turn, thinking included "
-                             f"(default {CONFIG.ollama.max_output_tokens})")
-    if workflow:
-        parser.add_argument("--batch-size", type=int, default=CONFIG.workflow.batch_size,
-                            help="how many elements the model judges in one call "
-                                 f"(default {CONFIG.workflow.batch_size})")
+    commands = parser.add_subparsers(dest="analyzer", required=True, metavar="analyzer")
+    for analyzer in analyzers.values():
+        command = commands.add_parser(analyzer.name, help=analyzer.description, description=analyzer.description)
+        command.add_argument("url", help="the page to check")
+        command.add_argument("--backend", choices=models, default="gemini",
+                             help="gemini (Google's API) or ollama (a local model)")
+        command.add_argument("--model", help="the model to use; defaults to "
+                             + ", ".join(f"{model} for {backend}" for backend, model in models.items()))
+        command.add_argument("--no-think", action="store_true",
+                             help="ollama only: answer without thinking first, which is much faster on a CPU")
+        command.add_argument("--max-output-tokens", type=int, default=CONFIG.ollama.max_output_tokens,
+                             help="ollama only: the most tokens the model may write per turn, thinking included "
+                                  f"(default {CONFIG.ollama.max_output_tokens})")
+        if workflow:
+            command.add_argument("--batch-size", type=int, default=CONFIG.workflow.batch_size,
+                                 help="how many elements the model judges in one call "
+                                      f"(default {CONFIG.workflow.batch_size})")
+        analyzer.add_arguments(command)
     return parser
 
 def parse_args(parser):
@@ -230,7 +231,7 @@ def skill_body(skill):
 def skills_prompt(skills):
     return "\n\n".join(f"## {skill.name}\n{skill.description}\n\n{skill_body(skill)}" for skill in skills.values())
 
-# Agent: the model calls the tools itself and submits one report
+# Agent: what the analyzers' tools and evidence checks share
 
 def docstring_with(**values):
     def fill(function):
@@ -248,83 +249,7 @@ def split_backed(items, kind, problem_of):
             backed.append(item)
     return backed, unverified
 
-def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject):
-    model, settings = model_and_settings(args)
-    name = model_name(args)
-    limits = CONFIG.agent
-    output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
-    agent = Agent(model, instructions=system_prompt, tools=tools, model_settings=settings,
-                  output_type=ToolOutput(submission, name="submit_report"),
-                  retries={"tools": limits.max_tool_retries, "output": output_retries})
-    usage = Counter()
-
-    @agent.output_validator
-    def check_report(report):
-        unverified = review(report)
-        if not unverified or usage["rejected_submissions"] >= limits.max_rejections:
-            return report
-        usage.update(rejected_submissions=1, unbacked_claims=len(unverified))
-        print(f"=====Report rejected: {len(unverified)} unbacked item(s)=====")
-        raise ModelRetry(reject(unverified))
-
-    def show_turn(turn):
-        if turn.thoughts:
-            print(f"\n====={name}'s thoughts=====\n{turn.thoughts}\n")
-        if turn.text:
-            print(f"\n====={name} says=====\n{turn.text}\n")
-
-        usage.update(llm_requests=1, input_tokens=turn.input_tokens, output_tokens=turn.output_tokens,
-                     truncated_replies=int(turn.truncated))
-
-        if turn.truncated:
-            print(f"====={name} was cut off at the output token limit=====")
-
-        if not turn.tool_calls:
-            if usage["text_replies"] >= limits.max_text_replies:
-                print(f"====={name} has no more function calls=====")
-                return False
-            usage["text_replies"] += 1
-            print(f"=====No tool call, asking {name} to call a tool=====")
-        for tool_name in turn.tool_calls:
-            print(f"====={name} wants to use the {tool_name} tool=====")
-        return True
-
-    def show_request(request):
-        # prints what goes back to the model: tool results, and what it is asked to fix
-        for part in request.parts:
-            if isinstance(part, ToolReturnPart):
-                result = json.dumps(part.content, indent=2, ensure_ascii=False, default=str)
-                print(f"=====Result of {part.tool_name}=====\n{result}\n")
-            elif isinstance(part, RetryPromptPart):
-                print(f"=====Sent back to {name}=====\n{part.model_response()}\n")
-
-    async def run():
-        # Tools run one at a time, in the order the model called them
-        with agent.parallel_tool_call_execution_mode("sequential"):
-            async with agent.iter(user_prompt) as agent_run:
-                async for node in agent_run:
-                    if Agent.is_call_tools_node(node):
-                        # the model has replied, and its tool calls haven't run yet
-                        if not show_turn(read_response(node.model_response)):
-                            return None
-                    elif Agent.is_model_request_node(node):
-                        show_request(node.request)
-                return agent_run.result.output
-
-    try:
-        submitted = asyncio.run(run())
-    except (UnexpectedModelBehavior, UsageLimitExceeded) as e:
-        # out of retries, a reply cut off in the middle of a tool call, or the request limit
-        print(f"=====The run stopped: {e}=====")
-        submitted = None
-
-    if submitted is None:
-        print("=====No valid report was submitted=====")
-    else:
-        print(f"====={name} has submitted the final report=====")
-    return submitted, usage
-
-# Workflow: the script runs the tools and asks the model about a few elements at a time
+# Workflow: the answers the analyzers ask for, and how they are counted
 
 def answers_schema(key, properties, required):
     return {
@@ -359,100 +284,11 @@ class Note(BaseModel):
 
 VERDICT_SEVERITY = {"pass": "info", "fail": "warning", "unsure": "needs-review", "unanswered": "needs-review"}
 
-@dataclass
-class Task:
-    criterion: str  # what the model judges, e.g. alt-text or soft-404
-    instructions: str
-    items: list[dict]  # what the model sees about each element, with its id
-    answer: type = Verdict
-    batched: bool = True  # False when the model needs every item at once, like a heading outline
-
 def with_ids(items, prefix):
     return [(f"{prefix}-{number}", item) for number, item in enumerate(items, 1)]
 
 def without(item, *keys):
     return {key: value for key, value in item.items() if key not in keys}
-
-def add_task(tasks, elements, criterion, instructions, entries, **options):
-    # entries are (id, what the model sees, what the report keeps)
-    for element_id, _, kept in entries:
-        elements[element_id] = {"criterion": criterion, **kept}
-    if entries:
-        tasks.append(Task(criterion, instructions,
-                          [{"id": element_id, **shown} for element_id, shown, _ in entries], **options))
-
-def batches(task, size):
-    if not task.batched:
-        return [task.items]
-    return [task.items[start:start + size] for start in range(0, len(task.items), size)]
-
-def make_judge(args, system_prompt):
-    model, settings = model_and_settings(args)
-    return Agent(model, instructions=system_prompt, model_settings=settings, retries={"output": 0})
-
-def ask_json(judge, message, key, schema):
-    with capture_run_messages() as messages:
-        try:
-            data = judge.run_sync(message, output_type=NativeOutput(StructuredDict(schema, name=key))).output
-        except UnexpectedModelBehavior:
-            data = None
-    reply = [sent for sent in messages if isinstance(sent, ModelResponse)][-1]
-    return data, read_response(reply)
-
-def ask(judge, task, items, usage):
-    key, schema = task.answer.FORMAT
-    asked = {item["id"] for item in items}
-    answers, omitted, invented = {}, [], []
-    pending = items
-    for attempt in range(1 + CONFIG.workflow.max_retries):
-        if attempt:
-            print(f"=====Asking again about {len(pending)} element(s) left out=====")
-        data, reply = ask_json(judge, task.instructions + "\n\n" + json.dumps(pending, ensure_ascii=False, indent=1),
-                               key, schema)
-        usage.update(llm_requests=1, input_tokens=reply.input_tokens, output_tokens=reply.output_tokens,
-                     truncated_replies=int(reply.truncated))
-        if reply.thoughts:
-            print(f"====={judge.model.model_name}'s thoughts=====\n{reply.thoughts}\n")
-
-        returned = data.get(key) if isinstance(data, dict) else None
-        if not isinstance(returned, list):
-            usage["invalid_replies"] += 1
-            print(f"=====Not an answer in the expected format=====\n{reply.text}\n")
-            returned = []
-        for raw in returned:
-            try:
-                answer = task.answer.model_validate(raw)
-            except ValidationError:
-                continue  # an answer that doesn't follow the format counts as no answer
-            if answer.id not in asked:
-                invented.append(answer.id)
-            elif answer.id not in answers:
-                answers[answer.id] = answer
-                print(f"{answer.id}: " + (f"{answer.verdict} | {answer.reason}" if isinstance(answer, Verdict)
-                                          else answer.note))
-
-        pending = [item for item in pending if item["id"] not in answers]
-        if attempt == 0:
-            omitted = [item["id"] for item in pending]
-        if not pending:
-            break
-    return answers, omitted, invented
-
-@dataclass
-class Answers:
-    by_id: dict = field(default_factory=dict)  # each element's valid answer
-    omitted: set = field(default_factory=set)  # ids left out of the model's first answer for their batch
-    invented: Counter = field(default_factory=Counter)  # ids the model made up, per criterion
-
-def ask_tasks(judge, tasks, batch_size, usage, answers):
-    for task in tasks:
-        task_batches = batches(task, batch_size)
-        for number, items in enumerate(task_batches, 1):
-            print(f"\n====={task.criterion}: batch {number} of {len(task_batches)}, {len(items)} element(s)=====")
-            batch_answers, batch_omitted, batch_invented = ask(judge, task, items, usage)
-            answers.by_id.update(batch_answers)
-            answers.omitted.update(batch_omitted)
-            answers.invented[task.criterion] += len(batch_invented)
 
 def criteria_counts(verdicts, invented):
     counts = {}
