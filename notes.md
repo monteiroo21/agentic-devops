@@ -8,3 +8,5 @@
 - [ ] Add orchestrator at the end, to make a full analysis of the page, calling both developed agents
 - [ ] Check improvements on the generated reports
 - [ ] Plant accessbility problems on the test website
+- [ ] Change skills to discovery, instead of handing them out instantly
+- [ ] Add example to the skills, if relevant
