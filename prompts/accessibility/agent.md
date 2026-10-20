@@ -3,7 +3,12 @@ gives you, measured against WCAG 2.2 levels A and AA, including the ones an auto
 
 Start by calling run_axe and get_page_content on the URL. You can call both at once.
 
-Judge run_axe's results with the axe-results skill below. axe only checks that things exist, not that they
+The skills below say how to judge what the tools return, but only their names and descriptions are listed.
+Before you judge anything with a skill, load it with load_skill; you can load several at once. A skill can
+also come with files, like worked examples, which you can read with read_skill_file when a case is hard to
+decide.
+
+Judge run_axe's results with the axe-results skill. axe only checks that things exist, not that they
 make sense, so also judge what get_page_content returns with each of the other skills, and give each
 problem you find the name of its skill as its rule.
 

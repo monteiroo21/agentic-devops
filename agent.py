@@ -3,14 +3,58 @@ import json
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from pydantic_ai import (Agent, ModelRetry, RetryPromptPart, ToolOutput, ToolReturnPart, UnexpectedModelBehavior,
+from pydantic_ai import (Agent, ModelRetry, RetryPromptPart, Tool, ToolOutput, ToolReturnPart, UnexpectedModelBehavior,
                          UsageLimitExceeded, UsageLimits)
 from analyzers import ANALYZERS
 from chat_backends import read_response
 from common import (CONFIG, make_parser, model_and_settings, model_name, parse_args, report_fields, report_path,
-                    skills_prompt)
+                    skill_files, skill_instructions, skills_prompt)
 
 # The model calls the tools itself and submits one report
+
+class SkillTools:
+    def __init__(self, skills):
+        self.skills = skills
+        self.loaded = []  # in the order the model first loaded them
+        self.files_read = []  # as skill/path
+
+    def no_skill(self, name):
+        return {"error": f"there is no skill named {name!r}; the skills are {', '.join(self.skills)}"}
+
+    def load_skill(self, name: str):
+        """Loads a skill's instructions, which say how to judge what the skill is for, with the files that come with
+        it, like worked examples, which read_skill_file reads. A skill with no files has no files field.
+
+        Args:
+            name: The skill's name, exactly as listed under Skills.
+        """
+        skill = self.skills.get(name)
+        if skill is None:
+            return self.no_skill(name)
+        if name not in self.loaded:
+            self.loaded.append(name)
+        files = skill_files(skill)
+        return {"name": name, "instructions": skill_instructions(skill), **({"files": files} if files else {})}
+
+    def read_skill_file(self, skill: str, path: str):
+        """Reads one of the files that come with a skill, like its worked examples.
+
+        Args:
+            skill: The skill's name.
+            path: The file's path, exactly as load_skill listed it.
+        """
+        found = self.skills.get(skill)
+        if found is None:
+            return self.no_skill(skill)
+        files = skill_files(found)
+        if path not in files:
+            return {"error": f"the {skill} skill has no file {path!r}; its files are {', '.join(files) or 'none'}"}
+        if f"{skill}/{path}" not in self.files_read:
+            self.files_read.append(f"{skill}/{path}")
+        return {"skill": skill, "path": path, "content": (found.path.parent / path).read_text()}
+
+    def tools(self):
+        return [Tool(self.load_skill), Tool(self.read_skill_file)]
 
 def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject):
     model, settings = model_and_settings(args)
@@ -93,12 +137,13 @@ def main():
     args = parse_args(make_parser("Find problems on a web page with an agent that calls the tools itself and hands "
                                   "in one report.", ANALYZERS))
     analyzer = ANALYZERS[args.analyzer](args)
+    skills = SkillTools(analyzer.skills)
     system_prompt = f"{analyzer.system_prompt()}\n\n# Skills\n\n{skills_prompt(analyzer.skills)}"
 
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
-    submitted, usage = run_agent(args, system_prompt, analyzer.user_prompt(), analyzer.tools(), analyzer.submission,
-                                 analyzer.review, analyzer.reject)
+    submitted, usage = run_agent(args, system_prompt, analyzer.user_prompt(), analyzer.tools() + skills.tools(),
+                                 analyzer.submission, analyzer.review, analyzer.reject)
     analyzer.finish()
 
     if submitted is None:
@@ -112,6 +157,8 @@ def main():
         rejected_submissions=usage["rejected_submissions"],
         unbacked_claims=usage["unbacked_claims"],
         text_replies=usage["text_replies"],
+        skills_loaded=skills.loaded,
+        skill_files_read=skills.files_read,
         findings=findings,
         **fields,
     )

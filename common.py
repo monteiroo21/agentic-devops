@@ -165,6 +165,8 @@ class AgentReport(BaseReport):
     rejected_submissions: int = 0  # times the agent submitted items it hadn't checked
     unbacked_claims: int = 0  # total unbacked items across those submissions
     text_replies: int = 0  # times the model wrote text instead of calling a tool; always 0 for Gemini, which must call one
+    skills_loaded: list[str] = []  # the skills the agent loaded, in the order it first loaded them
+    skill_files_read: list[str] = []  # the files it read from them, as skill/path
 
 class WorkflowReport(BaseReport):
     mode: str = "workflow"
@@ -185,8 +187,6 @@ def report_fields(args, started_at, start, usage):
         output_tokens=usage["output_tokens"],
         truncated_replies=usage["truncated_replies"],
     )
-
-# Skills: what each criterion means and how to judge it, in skills/<analyzer>/<name>/SKILL.md
 
 FRONTMATTER = re.compile(r"---\n(.*?)\n---\n?(.*)", re.DOTALL)
 
@@ -230,11 +230,25 @@ def list_skills(folder):
         raise ValueError(f"no skills in {folder}")
     return skills
 
-def skill_body(skill):
+def skill_instructions(skill):
     return read_skill(skill.path)[1]
 
+def skill_files(skill):
+    folder = skill.path.parent
+    return sorted(path.relative_to(folder).as_posix() for path in folder.rglob("*")
+                  if path.is_file() and path != skill.path)
+
+def skill_body(skill):
+    body = skill_instructions(skill)
+    examples = skill.path.parent / "references" / "examples.md"
+    if examples.exists():
+        body += "\n\n" + examples.read_text().strip()
+    return body
+
 def skills_prompt(skills):
-    return "\n\n".join(f"## {skill.name}\n{skill.description}\n\n{skill_body(skill)}" for skill in skills.values())
+    entries = [f"<skill>\n<name>{skill.name}</name>\n<description>{skill.description}</description>\n</skill>"
+               for skill in skills.values()]
+    return "<available_skills>\n" + "\n".join(entries) + "\n</available_skills>"
 
 def read_prompt(path, **values):
     # a prompt from the prompts folder, with its {placeholders} filled in

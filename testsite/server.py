@@ -1,8 +1,7 @@
 """Test site for the link analyzer (agent.py links, workflow.py links): a fictional Porto bike shop with planted link problems.
 
 One process serves the shop, www.veloribeira.pt, and the fictional "external" sites it links to,
-choosing the site by the Host header. Nothing on the pages says it is a test: the planted problems,
-and decoys that look suspicious but are fine, are listed in ground_truth.json, which is never served.
+choosing the site by the Host header. 
 
 Setup, once:
     1. Add these lines to /etc/hosts:
@@ -235,7 +234,6 @@ PEDALMAP_ROUTES = {
     },
 }
 
-# The comments mark what each route plants; ground_truth.json has the full answer key
 shop_routes = {
     # home.html also plants accessibility defects: images whose alt is "Photo", a file name or the link's own text,
     # or missing; a "Find out more" link with nothing around it saying where it goes, and a link whose aria-label is
