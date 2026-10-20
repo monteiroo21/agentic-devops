@@ -10,8 +10,12 @@ without a URL to check the page as it is now. Each check returns the state the p
 every review and problem you report from it. Refer to elements by the selectors those two tools return, never by
 the aria-ref handles from snapshot. To start again from the page as loaded, call a check with the URL.
 
-Use screenshot when how the page looks decides the question, like text over an image whose contrast axe could not
-decide.
+For each color-contrast element under needs_review, take a screenshot before you decide it, with full_page set if
+the element is further down the page. Answer pass only if the text is clearly readable against every part of the
+background behind it, and fail only if some of it clearly isn't, like light text over a light patch of a photo. A
+screenshot can't show a contrast ratio, so anything in between stays manual-review. Say in the evidence that you
+decided from the screenshot. With the browser, this replaces what the axe-results skill says about contrast over an
+image being impossible to decide.
 
 Stay on this page: if an action takes you somewhere else, go back. Never log in, buy, book or type real personal
 data; type only to see how a form reacts. Nothing you submit leaves the browser.
