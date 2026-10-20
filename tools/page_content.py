@@ -6,8 +6,11 @@ ACCESSIBILITY = CONFIG.accessibility
 # Runs in the page: what a reader sees, for the judgements axe can't make
 PAGE_CONTENT_JS = (Path(__file__).parent / "page_content.js").read_text()
 
-def get_page_content(url):
-    return visit(url, "content", lambda page: page.evaluate(PAGE_CONTENT_JS))
+async def content_on(page):
+    return await page.evaluate(PAGE_CONTENT_JS)
+
+async def get_page_content(url):
+    return await visit(url, "content", content_on)
 
 def item_for_model(item, own_text):
     kept = {key: value for key, value in item.items() if value is not None}

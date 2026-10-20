@@ -1,3 +1,6 @@
+from contextlib import nullcontext
+from common import CONFIG
+
 class Analyzer:
     # One analysis of one page. agent.py and workflow.py can run any analyzer; a subclass says what is specific to it
     name = None  # in the command line and in the report names
@@ -15,6 +18,10 @@ class Analyzer:
     def add_arguments(parser):
         pass  # flags only this analyzer has
 
+    @staticmethod
+    def add_agent_arguments(parser):
+        pass  # flags only this analyzer's agent has
+
     def finish(self):
         pass  # once the tools are done, e.g. to save their raw results
 
@@ -28,6 +35,15 @@ class Analyzer:
 
     def tools(self):
         raise NotImplementedError  # its tools, which record what they return
+
+    def toolsets(self):
+        return []  # tools that come in a set, like a browser's
+
+    def session(self):
+        return nullcontext()  # what the agent's run happens inside, like the browser its tools share
+
+    def request_limit(self):
+        return CONFIG.agent.max_requests
 
     def review(self, report):
         raise NotImplementedError  # the submitted items no tool result backs

@@ -4,14 +4,15 @@ from tools.browser import page_fields, visit
 ACCESSIBILITY = CONFIG.accessibility
 AXE_JS = ACCESSIBILITY.axe_script.read_text()
 
-def run_axe(url):
-    def collect(page):
-        page.add_script_tag(content=AXE_JS)
-        return page.evaluate(
-            """tags => axe.run(document, {runOnly: {type: 'tag', values: tags}})""",
-            ACCESSIBILITY.wcag_tags,
-        )
-    return visit(url, "axe", collect)
+async def axe_on(page):
+    await page.add_script_tag(content=AXE_JS)
+    return await page.evaluate(
+        """tags => axe.run(document, {runOnly: {type: 'tag', values: tags}})""",
+        ACCESSIBILITY.wcag_tags,
+    )
+
+async def run_axe(url):
+    return await visit(url, "axe", axe_on)
 
 def wcag_tags(rule):
     return [t for t in rule["tags"] if t.startswith("wcag")]

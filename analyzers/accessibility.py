@@ -1,15 +1,22 @@
+import asyncio
 import json
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 from pydantic_ai import Tool
+from pydantic_ai_harness.playwright import EgressPolicy, PlaywrightBrowserToolset
 from analyzers.base import Analyzer
 from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Note, WorkflowReport, docstring_with, list_skills,
                     read_prompt, skill_body, split_backed, with_ids, without)
-from tools.axe import axe_for_model, axe_selector, check_messages, run_axe, wcag_number, wcag_tags
-from tools.page_content import content_for_model, get_page_content, item_for_model
+from tools.axe import axe_for_model, axe_on, axe_selector, check_messages, run_axe, wcag_number, wcag_tags
+from tools.browser import ActionLog, GuardedSession, settle
+from tools.page_content import content_for_model, content_on, get_page_content, item_for_model
 
 ACCESSIBILITY = CONFIG.accessibility
+BROWSER = CONFIG.browser
+BROWSER_TOOLS = {"snapshot", "screenshot", "wait_for", "click", "hover", "press_key", "type_text", "select_option",
+                 "go_back"}
 
 class Assessment(BaseModel):
     rule: str = Field(description="The axe rule, exactly as run_axe returned it.")
@@ -24,6 +31,7 @@ class Review(BaseModel):
     evidence: str = Field(
         description="What in the tool results supports the verdict, or what is missing to decide.")
     note: str = Field(description="One or two sentences explaining the verdict.")
+    state: str = Field("s0", description="The state of the page the element was in, exactly as run_axe returned it.")
 
 SKILLS = list_skills(ACCESSIBILITY.skills)
 CRITERIA = [skill for skill in SKILLS.values() if skill.rules()]
@@ -41,6 +49,8 @@ class AgentFinding(BaseModel):
                                       "text and its context.")
     note: str = Field(description="One or two sentences explaining the problem and who it affects.")
     suggested_fix: str | None = Field(None, description="How to fix it, if you can tell.")
+    state: str = Field("s0", description="The state of the page the element was in, exactly as get_page_content "
+                                         "returned it.")
 
 class SubmitReport(BaseModel):
     """Hand in the final report. Call this once, after you have finished investigating."""
@@ -68,9 +78,21 @@ class Finding(BaseModel):
     note: str | None = None
     suggested_fix: str | None = None
 
+class StateFinding(Finding):
+    state: str  # the state of the agent's page it was found in, like s0
+
+class PageState(BaseModel):
+    id: str  # s0 for the page as first loaded
+    url: str
+    actions: list[str]  # what the agent did after loading the page, oldest first
+    axe: dict | None = Field(None, exclude=True)
+    content: dict | None = Field(None, exclude=True)
+
 class Report(AgentReport):
     axe_version: str | None
-    findings: list[Finding]
+    browser: bool  # whether the agent had the browser tools
+    states: list[PageState]  # every state of the page the agent checked
+    findings: list[StateFinding]
     unverified: list[dict] = []  # submitted items no tool result backs, kept after the last rejection
 
 class ElementVerdict(BaseModel):
@@ -88,23 +110,28 @@ class AccessibilityWorkflowReport(WorkflowReport):
 
 # Agent
 
-def assessment_problem(assessment, axe):
-    if axe is None:
+def checked(states, state_id, key):
+    return next((state for state in states if state.id == state_id and getattr(state, key) is not None), None)
+
+def assessment_problem(assessment, states):
+    results = [state.axe for state in states if state.axe is not None]
+    if not results:
         return "you never ran run_axe"
-    if assessment.rule not in {rule["id"] for rule in axe["violations"]}:
+    if assessment.rule not in {rule["id"] for axe in results for rule in axe["violations"]}:
         return "run_axe reported no violation of that rule"
     return None
 
-def review_problem(review, axe):
-    if axe is None:
-        return "you never ran run_axe"
-    to_review = {(rule["id"], axe_selector(node)) for rule in axe["incomplete"] for node in rule["nodes"]}
+def review_problem(review, states):
+    state = checked(states, review.state, "axe")
+    if state is None:
+        return f"run_axe never checked a state {review.state}"
+    to_review = {(rule["id"], axe_selector(node)) for rule in state.axe["incomplete"] for node in rule["nodes"]}
     if (review.rule, review.selector) not in to_review:
-        return "run_axe did not list that element under needs_review for that rule"
+        return f"run_axe did not list that element under needs_review for that rule in {review.state}"
     return None
 
-def finding_problem(finding, content):
-    if content is None:
+def finding_problem(finding, states):
+    if not any(state.content is not None for state in states):
         return "you never read the page with get_page_content"
     if finding.rule not in ELEMENT_LISTS:
         return None  # page-title is about the whole page
@@ -112,69 +139,82 @@ def finding_problem(finding, content):
     noun = kind.removesuffix("s")
     if finding.selector is None:
         return f"give the selector of the {noun}" if finding.rule in NEEDS_SELECTOR else None
-    if finding.selector not in {item["selector"] for item in content[kind]}:
-        return f"get_page_content returned no {noun} with that selector"
+    state = checked(states, finding.state, "content")
+    if state is None:
+        return f"get_page_content never read a state {finding.state}"
+    if finding.selector not in {item["selector"] for item in state.content[kind]}:
+        return f"get_page_content returned no {noun} with that selector in {finding.state}"
     return None
 
-def check_report(report, axe, content):
+def check_report(report, states):
     # splits the report into what the tool results back and what they don't
     assessments, unverified_assessments = split_backed(
-        report.assessments, "assessment", lambda a: assessment_problem(a, axe))
-    reviews, unverified_reviews = split_backed(report.reviews, "review", lambda r: review_problem(r, axe))
+        report.assessments, "assessment", lambda a: assessment_problem(a, states))
+    reviews, unverified_reviews = split_backed(report.reviews, "review", lambda r: review_problem(r, states))
     agent_findings, unverified_findings = split_backed(
-        report.agent_findings, "agent_finding", lambda f: finding_problem(f, content))
+        report.agent_findings, "agent_finding", lambda f: finding_problem(f, states))
     return assessments, reviews, agent_findings, unverified_assessments + unverified_reviews + unverified_findings
 
 def unbacked_message(unverified):
     lines = [f"- {item['kind']} {item['rule']}" + (f" on {item['selector']}" if item.get("selector") else "")
-             + f": {item['reason']}" for item in unverified]
+             + (f" in {item['state']}" if item.get("state") else "") + f": {item['reason']}" for item in unverified]
     return ("Report not accepted. These items are not backed by what the tools showed you:\n"
             + "\n".join(lines)
-            + "\nCheck them, give them the rule and selector exactly as the tools returned them, or remove them, "
-              "then call submit_report again.")
+            + "\nCheck them, give them the rule, selector and state exactly as the tools returned them, or remove "
+              "them, then call submit_report again.")
 
-def axe_report_findings(axe, assessments, reviews):
+def first_seen(states, kind):
+    seen = set()
+    for state in states:
+        for rule in state.axe[kind] if state.axe is not None else []:
+            for node in rule["nodes"]:
+                if (rule["id"], axe_selector(node)) not in seen:
+                    seen.add((rule["id"], axe_selector(node)))
+                    yield state, rule, node
+
+def axe_report_findings(states, assessments, reviews):
     assessment_by_rule = {a.rule: a for a in assessments}
     review_by_element = {(r.rule, r.selector): r for r in reviews}
     findings = []
-    for rule in axe["violations"]:
+    for state, rule, node in first_seen(states, "violations"):
         assessment = assessment_by_rule.get(rule["id"])
-        for node in rule["nodes"]:
-            findings.append(Finding(
-                rule=rule["id"],
-                severity="error",
-                wcag=wcag_tags(rule),
-                selector=axe_selector(node),
-                source="axe",
-                html=node["html"][:ACCESSIBILITY.max_html_chars],
-                summary=node.get("failureSummary"),
-                note=assessment.note if assessment else None,
-                suggested_fix=assessment.suggested_fix if assessment else None,
-            ))
-    for rule in axe["incomplete"]:
-        for node in rule["nodes"]:
-            review = review_by_element.get((rule["id"], axe_selector(node)))
-            findings.append(Finding(
-                rule=rule["id"],
-                severity=REVIEW_SEVERITY[review.verdict] if review else "needs-review",
-                wcag=wcag_tags(rule),
-                selector=axe_selector(node),
-                source="axe",
-                html=node["html"][:ACCESSIBILITY.max_html_chars],
-                summary=node.get("failureSummary"),
-                verdict=review.verdict if review else None,
-                evidence=review.evidence if review else None,
-                note=review.note if review else None,
-            ))
+        findings.append(StateFinding(
+            rule=rule["id"],
+            severity="error",
+            wcag=wcag_tags(rule),
+            selector=axe_selector(node),
+            source="axe",
+            state=state.id,
+            html=node["html"][:ACCESSIBILITY.max_html_chars],
+            summary=node.get("failureSummary"),
+            note=assessment.note if assessment else None,
+            suggested_fix=assessment.suggested_fix if assessment else None,
+        ))
+    for state, rule, node in first_seen(states, "incomplete"):
+        review = review_by_element.get((rule["id"], axe_selector(node)))
+        findings.append(StateFinding(
+            rule=rule["id"],
+            severity=REVIEW_SEVERITY[review.verdict] if review else "needs-review",
+            wcag=wcag_tags(rule),
+            selector=axe_selector(node),
+            source="axe",
+            state=state.id,
+            html=node["html"][:ACCESSIBILITY.max_html_chars],
+            summary=node.get("failureSummary"),
+            verdict=review.verdict if review else None,
+            evidence=review.evidence if review else None,
+            note=review.note if review else None,
+        ))
     return findings
 
 def agent_report_finding(finding):
-    return Finding(
+    return StateFinding(
         rule=finding.rule,
         severity="warning",
         wcag=WCAG_FOR_RULE[finding.rule],
         selector=finding.selector,
         source="agent",
+        state=finding.state,
         evidence=finding.evidence,
         note=finding.note,
         suggested_fix=finding.suggested_fix,
@@ -264,11 +304,24 @@ class AccessibilityAnalyzer(Analyzer):
         # What the tools found, filled in during the run: the latest successful result of each
         self.axe = None
         self.content = None
+        self.browser = args.backend == "gemini" and not getattr(args, "no_browser", True)
+        self.browser_session = GuardedSession(policy=EgressPolicy(
+            allowed_domains=[urlparse(args.url).hostname], block_private_addresses=BROWSER.block_private_addresses))
+        self.states = []  # every state of the page the agent checked
+        self.loaded_url = None
+        self.actions = []  # what the agent did since loading the page
+        self.changed = False  # whether it did anything since the last check
 
     @staticmethod
     def add_arguments(parser):
         parser.add_argument("--output", type=Path, default=Path("reports/axe_raw.json"),
                             help="where to save axe's raw results (default reports/axe_raw.json)")
+
+    @staticmethod
+    def add_agent_arguments(parser):
+        parser.add_argument("--no-browser", action="store_true",
+                            help="don't give the agent a browser to explore the page with; it never has one with "
+                                 "--backend ollama")
 
     def finish(self):
         if self.axe is not None:
@@ -280,43 +333,78 @@ class AccessibilityAnalyzer(Analyzer):
     # Agent
 
     def system_prompt(self):
-        return read_prompt(ACCESSIBILITY.prompts / "agent.md")
+        prompt = read_prompt(ACCESSIBILITY.prompts / "agent.md")
+        return (prompt + "\n\n" + read_prompt(ACCESSIBILITY.prompts / "browser.md")) if self.browser else prompt
 
     def user_prompt(self):
         return f"Check the accessibility of {self.args.url}"
 
+    def page_changed(self, action):
+        self.actions.append(action)
+        self.changed = True
+
+    async def check_page(self, url, key, collect):
+        result = {"url": url, "final_url": None, "status": None, "error": None, key: None}
+        try:
+            page = await self.browser_session.ensure_page()
+            if url is not None and (url != self.loaded_url or self.changed):
+                response = await page.goto(url, wait_until="networkidle")
+                result["status"] = response.status if response else None
+                self.loaded_url, self.actions, self.changed = url, [], True
+            if self.loaded_url is None:
+                result["error"] = "no page is loaded yet: give the URL"
+                return result
+            result["url"] = self.loaded_url
+            if self.changed:
+                await settle(page)
+                self.states.append(PageState(id=f"s{len(self.states)}", url=page.url, actions=list(self.actions)))
+                self.changed = False
+            state = self.states[-1]
+            setattr(state, key, await collect(page))
+            result.update({key: getattr(state, key), "final_url": page.url, "state": state.id})
+        except Exception as e:
+            message = str(e)
+            result["error"] = message.splitlines()[0] if message else type(e).__name__
+        return result
+
     @docstring_with(max_elements_per_rule=ACCESSIBILITY.max_elements_per_rule)
-    def run_axe_tool(self, url: str):
-        """Loads a web page in a headless browser and runs the axe-core automated accessibility checks for WCAG
-        levels A and AA on it. Returns the page's status code, the rules the page violates and the rules axe could
-        not decide, which need review, each with its impact, WCAG tags and up to {max_elements_per_rule} of the
-        elements involved, and the ids of the rules that every element passed. The final URL is only given when the
-        page redirected, and an error only when the page could not be checked.
+    async def run_axe_tool(self, url: str | None = None):
+        """Runs the axe-core automated accessibility checks for WCAG levels A and AA on the page in a headless
+        browser. Given a URL, it loads that page first, unless the browser already shows it as loaded; without one,
+        it checks the page as it is now. Returns the state the page was in, the page's status code when it was just
+        loaded, the rules the page violates and the rules axe could not decide, which need review, each with its
+        impact, WCAG tags and up to {max_elements_per_rule} of the elements involved, and the ids of the rules that
+        every element passed. The state is s0 for the page as first loaded, and a new one once the page has changed.
+        The final URL is only given when the page is no longer at the URL it was loaded from, and an error only
+        when the page could not be checked.
 
         Args:
-            url: The URL of the web page to check.
+            url: The URL of the web page to check. Leave it out to check the page as it is now.
         """
-        result = run_axe(url)
+        result = await self.check_page(url, "axe", axe_on)
         if result["axe"] is not None:
             self.axe = result["axe"]
         return axe_for_model(result)
 
     @docstring_with(max_page_items=ACCESSIBILITY.max_page_items)
-    def get_page_content_tool(self, url: str):
-        """Loads a web page in a headless browser and returns what a reader sees: its title, the lang attribute of
-        the page, the start of its visible main text, its headings in order with the start of the text under each,
-        its visible images and links, and the parts of the page that have their own lang attribute, with their text.
-        Each image comes with its selector, src, alt text, the text of the link it is in and the text around it;
-        each link with its selector, text, URL, aria-label and title attributes and the text around it. Both also
-        give the heading of the section they are in. A passage in another language that is not listed in parts has
-        no lang attribute of its own. Up to {max_page_items} images, links and parts are listed. Empty fields are
-        left out: an image with no alt attribute has no alt field, while a decorative image has an empty one. The
-        final URL is only given when the page redirected, and an error only when the page could not be loaded.
+    async def get_page_content_tool(self, url: str | None = None):
+        """Returns what a reader sees on the page in a headless browser: its title, the lang attribute of the page,
+        the start of its visible main text, its headings in order with the start of the text under each, its visible
+        images and links, and the parts of the page that have their own lang attribute, with their text. Given a
+        URL, it loads that page first, unless the browser already shows it as loaded; without one, it reads the page
+        as it is now. Each image comes with its selector, src, alt text, the text of the link it is in and the text
+        around it; each link with its selector, text, URL, aria-label and title attributes and the text around it.
+        Both also give the heading of the section they are in. A passage in another language that is not listed in
+        parts has no lang attribute of its own. Up to {max_page_items} images, links and parts are listed. Empty
+        fields are left out: an image with no alt attribute has no alt field, while a decorative image has an empty
+        one. Also returns the state the page was in: s0 for the page as first loaded, and a new one once the page
+        has changed. The final URL is only given when the page is no longer at the URL it was loaded from, and an
+        error only when the page could not be read.
 
         Args:
-            url: The URL of the web page to read.
+            url: The URL of the web page to read. Leave it out to read the page as it is now.
         """
-        result = get_page_content(url)
+        result = await self.check_page(url, "content", content_on)
         if result["content"] is not None:
             self.content = result["content"]
         return content_for_model(result)
@@ -324,24 +412,38 @@ class AccessibilityAnalyzer(Analyzer):
     def tools(self):
         return [Tool(self.run_axe_tool, name="run_axe"), Tool(self.get_page_content_tool, name="get_page_content")]
 
+    def toolsets(self):
+        if not self.browser:
+            return []
+        tools = PlaywrightBrowserToolset(session=self.browser_session, max_content_tokens=BROWSER.max_content_tokens)
+        return [ActionLog(tools.filtered(lambda ctx, tool: tool.name in BROWSER_TOOLS), session=self.browser_session,
+                          on_action=self.page_changed)]
+
+    def session(self):
+        return self.browser_session
+
+    def request_limit(self):
+        return BROWSER.max_requests if self.browser else super().request_limit()
+
     def review(self, report):
-        *_, unverified = check_report(report, self.axe, self.content)
+        *_, unverified = check_report(report, self.states)
         return unverified
 
     def reject(self, unverified):
         return unbacked_message(unverified)
 
     def agent_report(self, submitted):
-        assessments, reviews, agent_findings, unverified = check_report(submitted, self.axe, self.content)
-        findings = ((axe_report_findings(self.axe, assessments, reviews) if self.axe is not None else [])
+        assessments, reviews, agent_findings, unverified = check_report(submitted, self.states)
+        findings = (axe_report_findings(self.states, assessments, reviews)
                     + [agent_report_finding(f) for f in agent_findings])
-        return findings, dict(axe_version=self.axe_version(), unverified=unverified)
+        return findings, dict(axe_version=self.axe_version(), unverified=unverified, browser=self.browser,
+                              states=self.states)
 
     # Workflow
 
     def collect(self):
-        axe_result = run_axe(self.args.url)
-        content_result = get_page_content(self.args.url)
+        axe_result = asyncio.run(run_axe(self.args.url))
+        content_result = asyncio.run(get_page_content(self.args.url))
         for tool_name, result in (("run_axe", axe_result), ("get_page_content", content_result)):
             if result["error"]:
                 print(f"====={tool_name} could not load {self.args.url}: {result['error']}=====")

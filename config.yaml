@@ -16,6 +16,11 @@ agent:
 workflow:
   batch_size: 8
   max_retries: 2
+browser:
+  settle_timeout_ms: 5000
+  block_private_addresses: false
+  max_content_tokens: 4000
+  max_requests: 80
 
 accessibility:
   skills: skills/accessibility

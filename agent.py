@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 from collections import Counter
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pydantic_ai import (Agent, ModelRetry, RetryPromptPart, Tool, ToolOutput, ToolReturnPart, UnexpectedModelBehavior,
                          UsageLimitExceeded, UsageLimits)
@@ -56,12 +57,13 @@ class SkillTools:
     def tools(self):
         return [Tool(self.load_skill), Tool(self.read_skill_file)]
 
-def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject):
+def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(), session=None,
+              request_limit=CONFIG.agent.max_requests):
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
     output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
-    agent = Agent(model, instructions=system_prompt, tools=tools, model_settings=settings,
+    agent = Agent(model, instructions=system_prompt, tools=tools, toolsets=toolsets, model_settings=settings,
                   output_type=ToolOutput(submission, name="submit_report"),
                   retries={"tools": limits.max_tool_retries, "output": output_retries})
     usage = Counter()
@@ -107,10 +109,9 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
                 print(f"=====Sent back to {name}=====\n{part.model_response()}\n")
 
     async def run():
-        # Tools run one at a time, in the order the model called them
         with agent.parallel_tool_call_execution_mode("sequential"):
-            usage_limits = UsageLimits(request_limit=limits.max_requests)
-            async with agent.iter(user_prompt, usage_limits=usage_limits) as agent_run:
+            usage_limits = UsageLimits(request_limit=request_limit)
+            async with session or nullcontext(), agent.iter(user_prompt, usage_limits=usage_limits) as agent_run:
                 async for node in agent_run:
                     if Agent.is_call_tools_node(node):
                         # the model has replied, and its tool calls haven't run yet
@@ -143,7 +144,8 @@ def main():
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
     submitted, usage = run_agent(args, system_prompt, analyzer.user_prompt(), analyzer.tools() + skills.tools(),
-                                 analyzer.submission, analyzer.review, analyzer.reject)
+                                 analyzer.submission, analyzer.review, analyzer.reject, analyzer.toolsets(),
+                                 analyzer.session(), analyzer.request_limit())
     analyzer.finish()
 
     if submitted is None:

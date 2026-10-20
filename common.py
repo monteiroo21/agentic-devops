@@ -45,6 +45,12 @@ class WorkflowConfig(Section):
     batch_size: int
     max_retries: int
 
+class BrowserConfig(Section):
+    settle_timeout_ms: int
+    block_private_addresses: bool  # false lets the agent's browser reach a site on this machine, like the test site
+    max_content_tokens: int  # the most page text a browser tool returns, like the text after a click
+    max_requests: int  # the agent's request limit when it has the browser, since exploring takes more turns
+
 class AccessibilityConfig(Section):
     skills: Path
     prompts: Path
@@ -73,6 +79,7 @@ class Config(Section):
     ollama: OllamaConfig
     agent: AgentConfig
     workflow: WorkflowConfig
+    browser: BrowserConfig
     accessibility: AccessibilityConfig
     links: LinksConfig
 
@@ -110,6 +117,8 @@ def make_parser(description, analyzers, workflow=False):
             command.add_argument("--batch-size", type=int, default=CONFIG.workflow.batch_size,
                                  help="how many elements the model judges in one call "
                                       f"(default {CONFIG.workflow.batch_size})")
+        else:
+            analyzer.add_agent_arguments(command)
         analyzer.add_arguments(command)
     return parser
 
