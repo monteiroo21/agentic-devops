@@ -9,7 +9,7 @@ from pydantic_ai import (Agent, ModelResponse, NativeOutput, StructuredDict, Une
 from analyzers import ANALYZERS
 from chat_backends import read_response
 from common import (CONFIG, Verdict, criteria_counts, make_parser, model_and_settings, parse_args, report_fields,
-                    report_path)
+                    report_path, trace_to_logfire)
 
 # The script runs the tools and asks the model about a few elements at a time
 
@@ -119,6 +119,7 @@ class Questions:
         ask_tasks(self.judge, tasks, self.batch_size, self.usage, self.answers)
 
 def main():
+    trace_to_logfire()
     args = parse_args(make_parser("Find problems on a web page, asking the model about one question and a few "
                                   "elements at a time.", ANALYZERS, workflow=True))
     analyzer = ANALYZERS[args.analyzer](args)

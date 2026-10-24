@@ -43,3 +43,16 @@ links:
   max_page_bytes: 524288
   max_page_text_chars: 2000
   workflow_page_text_chars: 600
+
+crawl:
+  folder: crawls
+  max_age_hours: 24
+  max_pages: 200
+  max_depth: 5
+  delay_s: 0.5
+  timeout_s: 10
+  max_page_bytes: 1048576
+  user_agent: Mozilla/5.0 (compatible; site-crawler/0.1)
+  robots_agent: site-crawler
+  respect_robots: true
+  skip_patterns: ['log-?out', 'sign-?out', 'delete', 'remove', 'add-to-cart', 'cart/add', 'unsubscribe', '[?&]action=']

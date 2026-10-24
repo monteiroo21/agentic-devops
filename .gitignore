@@ -12,4 +12,6 @@ wheels/
 .env
 node_modules/
 reports/
+crawls/
 .logfire/
+papers/

@@ -19,6 +19,9 @@ Pages to analyze, each with its own planted problems:
     http://www.veloribeira.pt/
     http://www.veloribeira.pt/partners
     http://www.veloribeira.pt/blog/douro-valley-3-day-itinerary
+
+For crawl.py, robots.txt disallows /account/, and /cart and the chain-care post link to traps: /logout,
+/cart/add and a rel=nofollow link. The server prints a WARNING whenever a trap is requested.
 """
 
 import argparse
@@ -66,8 +69,15 @@ class File:
 
 
 @dataclass
+class Trap:
+    # a URL the crawler must never request; the server prints a warning when it is
+    response: Page | Redirect  # what the real site would answer
+    warning: str
+
+
+@dataclass
 class Site:
-    routes: dict[str, Page | Redirect | File]
+    routes: dict[str, Page | Redirect | File | Trap]
     not_found: Page
     catch_all: dict[str, Page] = field(default_factory=dict)  # path prefix -> page for any other path under it
     static: bool = False  # serve the files in static/ under /static/
@@ -282,7 +292,12 @@ shop_routes = {
     "/careers": shop_page("careers.html", "Careers | Velo Ribeira"),
     "/contact": shop_page("contact.html", "Contact us | Velo Ribeira"),
     "/privacy": shop_page("privacy.html", "Privacy policy | Velo Ribeira"),
-    "/robots.txt": File(b"User-agent: *\nDisallow:\n", "text/plain"),
+    "/robots.txt": File(b"User-agent: *\nDisallow: /account/\n", "text/plain"),
+    # traps for crawl.py, linked from /cart and the chain-care post, away from the pages the analyzers check
+    "/logout": Trap(Redirect("/", 302), "a GET link that signs the visitor out"),
+    "/cart/add": Trap(Redirect("/cart", 302), "a GET link that adds a product to the basket"),
+    "/blog/chain-care-basics/print": Trap(shop_page("post-chain-care.html", "Chain care basics | Velo Ribeira"),
+                                          "only linked with rel=nofollow"),
 }
 shop_routes |= {
     f"/products/{slug}": shop_page("product.html", f"{product['name']} | Velo Ribeira",
@@ -378,6 +393,9 @@ class Handler(BaseHTTPRequestHandler):
         host = self.headers.get("Host", "").split(":")[0].lower()
         site = SITES.get(host, SITES[MAIN_HOST])
         response = find(site, urlsplit(self.path).path)
+        if isinstance(response, Trap):
+            print(f"WARNING: {host}{self.path} was requested: {response.warning}")
+            response = response.response
         if self.server.latency:
             time.sleep(random.uniform(*site.latency))
         try:

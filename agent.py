@@ -9,7 +9,7 @@ from pydantic_ai import (Agent, ModelRetry, RetryPromptPart, Tool, ToolOutput, T
 from analyzers import ANALYZERS
 from chat_backends import read_response
 from common import (CONFIG, make_parser, model_and_settings, model_name, parse_args, report_fields, report_path,
-                    skill_files, skill_instructions, skills_prompt)
+                    skill_files, skill_instructions, skills_prompt, trace_to_logfire)
 
 # The model calls the tools itself and submits one report
 
@@ -135,6 +135,7 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
     return submitted, usage
 
 def main():
+    trace_to_logfire()
     args = parse_args(make_parser("Find problems on a web page with an agent that calls the tools itself and hands "
                                   "in one report.", ANALYZERS))
     analyzer = ANALYZERS[args.analyzer](args)

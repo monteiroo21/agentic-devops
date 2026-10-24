@@ -14,9 +14,12 @@ from chat_backends import make_model
 import logfire
 
 load_dotenv()
-logfire.configure(send_to_logfire="if-token-present")
-logfire.instrument_pydantic_ai()
-logfire.instrument_httpx()
+
+def trace_to_logfire():
+    # the analyzers' model calls and HTTP requests, sent to Logfire when a token is set; the crawler doesn't call this
+    logfire.configure(send_to_logfire="if-token-present")
+    logfire.instrument_pydantic_ai()
+    logfire.instrument_httpx()
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 
@@ -73,6 +76,19 @@ class LinksConfig(Section):
     max_page_text_chars: int
     workflow_page_text_chars: int
 
+class CrawlConfig(Section):
+    folder: Path
+    max_age_hours: float  # a site run reuses a crawl with the same start, scope and settings younger than this
+    max_pages: int
+    max_depth: int  # link hops from the start page; following a redirect isn't a hop
+    delay_s: float  # between two requests, or robots.txt's Crawl-delay if that's longer
+    timeout_s: float
+    max_page_bytes: int
+    user_agent: str
+    robots_agent: str  # the name robots.txt rules are matched against
+    respect_robots: bool
+    skip_patterns: list[str]  # regexes for links that look like actions, matched against the path and query
+
 class Config(Section):
     models: ModelsConfig
     gemini: GeminiConfig
@@ -82,6 +98,7 @@ class Config(Section):
     browser: BrowserConfig
     accessibility: AccessibilityConfig
     links: LinksConfig
+    crawl: CrawlConfig
 
 def load_config(path=CONFIG_PATH):
     config = Config.model_validate(yaml.safe_load(path.read_text()))
@@ -90,6 +107,7 @@ def load_config(path=CONFIG_PATH):
     config.accessibility.axe_script = path.parent / config.accessibility.axe_script
     config.links.skills = path.parent / config.links.skills
     config.links.prompts = path.parent / config.links.prompts
+    config.crawl.folder = path.parent / config.crawl.folder
     return config
 
 CONFIG = load_config()
