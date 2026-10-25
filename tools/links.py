@@ -1,20 +1,54 @@
+import re
 import time
-from urllib.parse import urldefrag, urlparse
+from urllib.parse import urldefrag, urlparse, urlsplit
 import httpx
 import lxml.html
 from bs4 import BeautifulSoup
 from common import CONFIG
 
 LINKS = CONFIG.links
+ACTION_PATTERNS = [re.compile(pattern, re.IGNORECASE) for pattern in CONFIG.crawl.skip_patterns]
+
+class ActionRefused(Exception):
+    pass
+
+def action_pattern(url, patterns=ACTION_PATTERNS):
+    # the skip pattern the URL's path and query match, like log-?out for /logout, or None
+    parts = urlsplit(url)
+    target = parts.path + (f"?{parts.query}" if parts.query else "")
+    return next((pattern.pattern for pattern in patterns if pattern.search(target)), None)
+
+def refuse_actions(request):
+    # runs before every request, each redirect included: a GET to a URL that looks like an action, like a logout
+    # link, could change something on the site, so it is never sent
+    pattern = action_pattern(str(request.url))
+    if pattern:
+        raise ActionRefused(f"not requested: {request.url} looks like an action (matches {pattern!r})")
 
 client = httpx.Client(
     follow_redirects=True,
     timeout=LINKS.timeout_s,
     headers={"User-Agent": LINKS.user_agent},
+    event_hooks={"request": [refuse_actions]},
 )
 
 IGNORED_LINK_RELS = {"preconnect", "dns-prefetch"}
 HIDDEN_FIELDS = {"verdict", "time_ms"}  # the model must judge each link itself, and timings don't help it
+
+# Set by remember_results for a site run, so a URL that many of its pages link to is only requested once
+known_checks = None
+known_texts = None
+
+def remember_results():
+    global known_checks, known_texts
+    known_checks, known_texts = {}, {}
+
+def known_or_new(known, key, run):
+    if known is None:
+        return run()
+    if key not in known:
+        known[key] = run()
+    return dict(known[key])  # a copy, so what one caller changes doesn't reach the others
 
 def page_soup(html):
     soup = BeautifulSoup(html, "html.parser")
@@ -37,6 +71,9 @@ def read_start(response, limit=LINKS.max_page_bytes):
     return body[:limit].decode(response.encoding or "utf-8", errors="replace")
 
 def check_url(url):
+    return known_or_new(known_checks, url, lambda: request_url(url))
+
+def request_url(url):
     # one GET per link, like a browser; HTML pages also give their title and first heading
     result = {"url": url, "status": None, "final_url": None, "redirects": [], "content_type": None,
               "title": None, "heading": None, "error": None, "time_ms": None, "verdict": None}
@@ -49,6 +86,8 @@ def check_url(url):
         result.update(error="too many redirects", verdict="broken")
     except httpx.TimeoutException:
         result.update(error="timeout", verdict="unreachable")
+    except ActionRefused as e:
+        result.update(error=str(e), verdict="skipped")
     except Exception as e:
         # DNS failures, refused connections, SSL errors, invalid URLs, ...
         result.update(error=str(e) or type(e).__name__, verdict="unreachable")
@@ -122,6 +161,9 @@ def check_page_links(url):
     return page
 
 def fetch_page_text(url, max_chars=LINKS.max_page_text_chars):
+    return known_or_new(known_texts, (url, max_chars), lambda: read_page_text(url, max_chars))
+
+def read_page_text(url, max_chars):
     # returns the page's title and a short piece of its visible text
     result = {"url": url, "final_url": None, "status": None, "content_type": None,
               "title": None, "heading": None, "text": None, "truncated": False, "error": None}

@@ -44,6 +44,14 @@ links:
   max_page_text_chars: 2000
   workflow_page_text_chars: 600
 
+orchestrator:
+  prompts: prompts/orchestrator
+  max_requests: 150
+  pages_per_call: 5
+  evidence_per_call: 10
+  max_fact_chars: 100
+  max_missing_listed: 30
+
 crawl:
   folder: crawls
   max_age_hours: 24

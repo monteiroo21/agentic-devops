@@ -10,7 +10,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 import lxml.html
 from common import CONFIG, slug
-from tools.links import read_start
+from tools.links import action_pattern, read_start
 
 CRAWL = CONFIG.crawl
 HTML_TYPES = {"text/html", "application/xhtml+xml"}
@@ -160,11 +160,8 @@ class Crawler:
         self.linked_from = Counter()  # how many crawled pages link or redirect to each URL
 
     def skip_reason(self, found):
-        parts = urlsplit(found.url)
-        target = parts.path + (f"?{parts.query}" if parts.query else "")
-        for pattern in self.skip_patterns:
-            if pattern.search(target):
-                return f"looks like an action: matches {pattern.pattern!r}"
+        if pattern := action_pattern(found.url, self.skip_patterns):
+            return f"looks like an action: matches {pattern!r}"
         if found.depth > self.settings["max_depth"]:
             return f"deeper than max_depth ({self.settings['max_depth']})"
         if self.robots and not self.robots.allowed(found.url):

@@ -21,13 +21,13 @@ class Task:
     answer: type = Verdict
     batched: bool = True  # False when the model needs every item at once, like a heading outline
 
-def add_task(tasks, elements, criterion, instructions, entries, **options):
-    # entries are (id, what the model sees, what the report keeps)
+def add_task(tasks, elements, criterion, instructions, entries, known=(), **options):
+    # entries are (id, what the model sees, what the report keeps); those whose answer is known aren't asked
     for element_id, _, kept in entries:
         elements[element_id] = {"criterion": criterion, **kept}
-    if entries:
-        tasks.append(Task(criterion, instructions,
-                          [{"id": element_id, **shown} for element_id, shown, _ in entries], **options))
+    items = [{"id": element_id, **shown} for element_id, shown, _ in entries if element_id not in known]
+    if items:
+        tasks.append(Task(criterion, instructions, items, **options))
 
 def batches(task, size):
     if not task.batched:
@@ -102,40 +102,81 @@ def ask_tasks(judge, tasks, batch_size, usage, answers):
             answers.omitted.update(batch_omitted)
             answers.invented[task.criterion] += len(batch_invented)
 
+class Memory:
+    # what the workflows of a site run share. An element shown to the model exactly as on an earlier page gets the
+    # answer it got there instead of being asked again, and each distinct element is kept once, as an item with every
+    # page it is on, for the orchestrator to review
+    def __init__(self):
+        self.items = {}
+
+    def key(self, page, criterion, instructions, shown, batched):
+        # an element judged on its own is the same question on any page; one judged together with the rest of its
+        # page, like a heading in the page's outline, is only the same question on that page
+        return (criterion, instructions, json.dumps(shown, sort_keys=True, ensure_ascii=False),
+                None if batched else page)
+
+    def known(self, page, criterion, instructions, entries, batched):
+        # the answers already given for these entries, under the entries' own ids
+        answers = {}
+        for element_id, shown, _ in entries:
+            item = self.items.get(self.key(page, criterion, instructions, shown, batched))
+            if item is not None and item["answer"] is not None:
+                answers[element_id] = item["answer"].model_copy(update={"id": element_id})
+        return answers
+
+    def record(self, page, criterion, skill, instructions, entries, answers, batched):
+        for element_id, shown, kept in entries:
+            item = self.items.setdefault(self.key(page, criterion, instructions, shown, batched), {
+                "id": f"i{len(self.items) + 1}", "criterion": criterion, "skill": skill, "shown": shown,
+                "kept": kept, "answer": None, "elements": []})
+            if item["answer"] is None:
+                item["answer"] = answers.get(element_id)  # one left unanswered is asked again on its next page
+            item["elements"].append({"page": page, "id": element_id})
+
 class Questions:
     # what an analyzer asks the model through, keeping every element and answer for its report
-    def __init__(self, judge, batch_size, instructions):
+    def __init__(self, judge, batch_size, instructions, memory=None, page=None):
         self.judge = judge
         self.batch_size = batch_size
         self.instructions = instructions
+        self.memory = memory
+        self.page = page
         self.elements = {}
         self.answers = Answers()
         self.usage = Counter()
 
     def ask(self, criterion, ids, entries, skill=None, **options):
         # ids says what each entry is; the skill says how to judge it, and is the criterion's own unless given
+        instructions = self.instructions(skill or criterion, ids)
+        batched = options.get("batched", True)
+        known = {}
+        if self.memory is not None:
+            known = self.memory.known(self.page, criterion, instructions, entries, batched)
+            if known:
+                print(f"\n=====Reusing {len(known)} {criterion} answer(s) from earlier pages=====")
+        self.answers.by_id.update(known)
         tasks = []
-        add_task(tasks, self.elements, criterion, self.instructions(skill or criterion, ids), entries, **options)
+        add_task(tasks, self.elements, criterion, instructions, entries, known, **options)
         ask_tasks(self.judge, tasks, self.batch_size, self.usage, self.answers)
+        if self.memory is not None:
+            self.memory.record(self.page, criterion, skill or criterion, instructions, entries, self.answers.by_id,
+                               batched)
 
-def main():
-    trace_to_logfire()
-    args = parse_args(make_parser("Find problems on a web page, asking the model about one question and a few "
-                                  "elements at a time.", ANALYZERS, workflow=True))
-    analyzer = ANALYZERS[args.analyzer](args)
+def run_workflow(args, analyzer, memory=None):
+    # one page through one analyzer: its tools, then the model's answers; None if there was nothing to judge
     judge = make_judge(args, analyzer.judge_prompt)
 
     started_at = datetime.now(timezone.utc).isoformat()
     start = time.perf_counter()
     if not analyzer.collect():
-        return
+        return None
     analyzer.finish()
 
-    questions = Questions(judge, args.batch_size, analyzer.instructions)
+    questions = Questions(judge, args.batch_size, analyzer.instructions, memory, args.url)
     analyzer.ask_questions(questions)
 
     findings, verdicts, fields = analyzer.workflow_report(questions)
-    report = analyzer.workflow_report_type(
+    return analyzer.workflow_report_type(
         **report_fields(args, started_at, start, questions.usage),
         counts=dict(Counter(finding.severity for finding in findings)),
         invalid_replies=questions.usage["invalid_replies"],
@@ -145,6 +186,15 @@ def main():
         verdicts=verdicts,
         **fields,
     )
+
+def main():
+    trace_to_logfire()
+    args = parse_args(make_parser("Find problems on a web page, asking the model about one question and a few "
+                                  "elements at a time.", ANALYZERS, workflow=True))
+    analyzer = ANALYZERS[args.analyzer](args)
+    report = run_workflow(args, analyzer)
+    if report is None:
+        return
     path = report_path(f"{analyzer.name}-workflow", args)
     path.write_text(report.model_dump_json(indent=2))
     print(f"=====Report saved to {path}=====")

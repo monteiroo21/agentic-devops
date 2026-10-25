@@ -76,6 +76,14 @@ class LinksConfig(Section):
     max_page_text_chars: int
     workflow_page_text_chars: int
 
+class OrchestratorConfig(Section):
+    prompts: Path
+    max_requests: int  # the orchestrator's model calls in a run
+    pages_per_call: int  # the most pages analyze_pages sends to the workers at once
+    evidence_per_call: int  # the most items get_evidence returns at once
+    max_fact_chars: int  # how much of each text analyze_pages shows of what a worker was shown
+    max_missing_listed: int  # how many of the pages and items still to do a rejected report lists
+
 class CrawlConfig(Section):
     folder: Path
     max_age_hours: float  # a site run reuses a crawl with the same start, scope and settings younger than this
@@ -98,6 +106,7 @@ class Config(Section):
     browser: BrowserConfig
     accessibility: AccessibilityConfig
     links: LinksConfig
+    orchestrator: OrchestratorConfig
     crawl: CrawlConfig
 
 def load_config(path=CONFIG_PATH):
@@ -107,6 +116,7 @@ def load_config(path=CONFIG_PATH):
     config.accessibility.axe_script = path.parent / config.accessibility.axe_script
     config.links.skills = path.parent / config.links.skills
     config.links.prompts = path.parent / config.links.prompts
+    config.orchestrator.prompts = path.parent / config.orchestrator.prompts
     config.crawl.folder = path.parent / config.crawl.folder
     return config
 

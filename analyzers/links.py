@@ -54,7 +54,7 @@ class RejectedClaim(AgentFinding):
 
 class Finding(BaseModel):
     rule: str
-    severity: str  # error: broken or unreachable, warning: a problem the model found, info: blocked or redirected, needs-review: undecided
+    severity: str  # error: broken or unreachable, warning: a problem the model found, info: blocked, redirected or not requested, needs-review: undecided
     page: str | None
     url: str
     tag: str | None
@@ -120,7 +120,7 @@ def build_findings(checks, link_info, notes):
             severity = "error"
         elif verdict == "unreachable":
             rule, severity = "unreachable", "error"
-        else:  # "blocked" or "redirect"
+        else:  # "blocked", "redirect", or "skipped": not requested, since it looks like an action
             rule, severity = verdict, "info"
         note = notes.get(url)
         findings.append(Finding(
