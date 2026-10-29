@@ -9,3 +9,4 @@ item or the question. Then give the verdict:
 - unsure: the information you were given is not enough to decide. If you can't check something, the answer
   is unsure, never fail.
 Answer for every id you are given, and only for those.
+Write the JSON compactly, with each answer on a single line and no indentation.
