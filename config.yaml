@@ -16,6 +16,7 @@ agent:
 workflow:
   batch_size: 8
   max_retries: 2
+  parallel_requests: 1
 browser:
   settle_timeout_ms: 5000
   block_private_addresses: false
@@ -47,7 +48,7 @@ links:
 orchestrator:
   prompts: prompts/orchestrator
   max_requests: 150
-  pages_per_call: 5
+  pages_per_call: 10
   evidence_per_call: 10
   max_fact_chars: 100
   max_missing_listed: 30

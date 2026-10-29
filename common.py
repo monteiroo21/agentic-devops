@@ -47,6 +47,7 @@ class AgentConfig(Section):
 class WorkflowConfig(Section):
     batch_size: int
     max_retries: int
+    parallel_requests: int  # a question's batches sent to the model at once, with OLLAMA_NUM_PARALLEL as high
 
 class BrowserConfig(Section):
     settle_timeout_ms: int
@@ -190,6 +191,7 @@ class BaseReport(BaseModel):
     thinking: bool = True  # False for local runs with --no-think
     started_at: str
     duration_s: float
+    model_s: float  # of duration_s, the time spent waiting on the model
     llm_requests: int
     input_tokens: int
     output_tokens: int
@@ -219,6 +221,7 @@ def report_fields(args, started_at, start, usage):
         thinking=not args.no_think,
         started_at=started_at,
         duration_s=round(time.perf_counter() - start, 1),
+        model_s=round(usage["model_s"], 1),
         llm_requests=usage["llm_requests"],
         input_tokens=usage["input_tokens"],
         output_tokens=usage["output_tokens"],

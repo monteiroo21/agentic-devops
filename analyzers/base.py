@@ -63,7 +63,7 @@ class Analyzer:
         raise NotImplementedError  # what a question's ids are, then how the skill says to judge them
 
     def ask_questions(self, questions):
-        raise NotImplementedError  # asks each question with questions.ask()
+        raise NotImplementedError  # asks each question with questions.ask(); a yield waits for the answers so far
 
     def workflow_report(self, questions):
         raise NotImplementedError  # the findings, the verdicts, and the report fields only this analyzer has

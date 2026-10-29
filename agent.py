@@ -112,12 +112,18 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
         with agent.parallel_tool_call_execution_mode("sequential"):
             usage_limits = UsageLimits(request_limit=request_limit)
             async with session or nullcontext(), agent.iter(user_prompt, usage_limits=usage_limits) as agent_run:
+                last = time.perf_counter()
                 async for node in agent_run:
+                    # the time since the last node went to running it: the model's reply, or the tools it called
+                    now = time.perf_counter()
+                    elapsed, last = now - last, now
                     if Agent.is_call_tools_node(node):
                         # the model has replied, and its tool calls haven't run yet
+                        usage["model_s"] += elapsed
                         if not show_turn(read_response(node.model_response)):
                             return None
                     elif Agent.is_model_request_node(node):
+                        usage["tools_s"] += elapsed
                         show_request(node.request)
                 return agent_run.result.output
 

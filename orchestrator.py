@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import time
 from argparse import Namespace
 from collections import Counter
@@ -14,7 +13,7 @@ from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Verdict, docstring_wi
                     report_path, skills_prompt, trace_to_logfire)
 from crawl import crawl_settings, crawl_site, load_or_crawl, save_crawl
 from tools.links import check_url, fetch_page_text, page_text_for_model, remember_results
-from workflow import Memory, run_workflow
+from workflow import Judge, Memory, run_workflows
 
 ORCHESTRATOR = CONFIG.orchestrator
 TO_REVIEW = {"fail", "unsure", "unanswered"}  # the worker verdicts that always need the orchestrator's decision
@@ -85,6 +84,10 @@ class SiteReport(AgentReport):
     worker_output_tokens: int
     worker_truncated_replies: int
     worker_invalid_replies: int
+    worker_model_s: float  # the time the workers waited on their model
+    worker_collect_s: float  # the time the workers' tools took: fetching the pages, their links and where they lead
+    tools_s: float  # the time the orchestrator's tools took, the workers' included
+    crawl_s: float | None  # the time crawl_site took to crawl or load the site
     crawl_started_at: str | None
     crawl_reused: bool  # whether a crawl saved before the run was used
     coverage: dict[str, int]
@@ -126,6 +129,7 @@ class Orchestrator:
         self.started = datetime.now().astimezone()
         self.crawl = None
         self.crawl_reused = False
+        self.crawl_s = None
         self.pages = {}  # by id, like p3: the crawl's entry for the page
         self.page_ids = {}  # by URL
         self.reports = {}  # by page id: the worker's report
@@ -136,7 +140,7 @@ class Orchestrator:
         self.decisions = {}  # by item id
         self.refused = []
         self.skills = SkillTools(SKILLS)
-        self.worker_usage = Counter()
+        self.judge = Judge(self.worker_args(args.url), LinkAnalyzer.judge_prompt)  # the workers' model, for every page
 
     def items(self):
         return {item["id"]: item for item in self.memory.items.values()}
@@ -154,6 +158,7 @@ class Orchestrator:
         redirects to, and how many forms it has. Also lists the links the crawl didn't follow, with why, and says how
         many links lead to other sites. A crawl of the site saved in the last hours is reused."""
         if self.crawl is None:
+            start = time.perf_counter()
             url = self.args.url
             scope = {"mode": "host", "hosts": [urlsplit(url).hostname]}
             if self.args.recrawl:
@@ -164,6 +169,7 @@ class Orchestrator:
             self.crawl_reused = datetime.fromisoformat(self.crawl["started_at"]) < self.started
             self.pages = {f"p{number}": page for number, page in enumerate(self.crawl["pages"], 1)}
             self.page_ids = {page["url"]: page_id for page_id, page in self.pages.items()}
+            self.crawl_s = round(time.perf_counter() - start, 1)
         forms = Counter(form["found_on"] for form in self.crawl["forms"])
         return {
             "start_url": self.crawl["start_url"],
@@ -177,37 +183,41 @@ class Orchestrator:
             "stopped_early": self.crawl["truncated"],
         }
 
-    def run_worker(self, url):
-        worker_args = Namespace(url=url, analyzer=LinkAnalyzer.name, backend="ollama", model=self.args.worker_model,
-                                no_think=self.args.no_think, max_output_tokens=self.args.max_output_tokens,
-                                batch_size=self.args.batch_size)
-        return run_workflow(worker_args, LinkAnalyzer(worker_args), self.memory)
+    def worker_args(self, url):
+        return Namespace(url=url, analyzer=LinkAnalyzer.name, backend="ollama", model=self.args.worker_model,
+                         no_think=self.args.no_think, max_output_tokens=self.args.max_output_tokens,
+                         batch_size=self.args.batch_size)
 
-    async def analyze_page(self, page_id):
-        url = self.pages[page_id]["url"]
-        print(f"\n=====Worker: the links on {page_id}, {url}=====")
+    async def analyze(self, page_ids):
+        # the workers judge the pages together: each question is asked once for all of them
+        print(f"\n=====Workers: the links on {', '.join(page_ids)}=====")
+        analyzers = [LinkAnalyzer(self.worker_args(self.pages[page_id]["url"])) for page_id in page_ids]
         try:
-            report = await asyncio.to_thread(self.run_worker, url)
+            reports = await run_workflows(analyzers, self.judge, self.memory)
         except Exception as e:
-            report, self.errors[page_id] = None, str(e) or type(e).__name__
-        else:
+            for page_id in page_ids:
+                self.errors[page_id] = str(e) or type(e).__name__
+            return [{"id": page_id, "error": self.errors[page_id]} for page_id in page_ids]
+
+        results = []
+        for page_id, report in zip(page_ids, reports):
             if report is None:
                 self.errors[page_id] = "the worker's link checker could not read the page"
-        if report is None:
-            return {"id": page_id, "error": self.errors[page_id]}
-
-        self.reports[page_id] = report
-        for key in ("llm_requests", "input_tokens", "output_tokens", "truncated_replies", "invalid_replies"):
-            self.worker_usage[key] += getattr(report, key)
-        checker = []
-        for finding in report.findings:
-            # redirects come up again as items, and a finding already returned for another page isn't repeated
-            if finding.source != "checker" or finding.rule == "redirect" or (finding.url, finding.rule) in self.checker_shown:
+                results.append({"id": page_id, "error": self.errors[page_id]})
                 continue
-            self.checker_shown.add((finding.url, finding.rule))
-            checker.append(filled({"url": finding.url, "rule": finding.rule, "text": finding.text,
-                                   "status": finding.status, "error": finding.error, "note": finding.note}))
-        return filled({"id": page_id, "links_checked": report.links_checked, "checker": checker})
+
+            self.reports[page_id] = report
+            checker = []
+            for finding in report.findings:
+                # redirects come up again as items, and a finding already returned for another page isn't repeated
+                if (finding.source != "checker" or finding.rule == "redirect"
+                        or (finding.url, finding.rule) in self.checker_shown):
+                    continue
+                self.checker_shown.add((finding.url, finding.rule))
+                checker.append(filled({"url": finding.url, "rule": finding.rule, "text": finding.text,
+                                       "status": finding.status, "error": finding.error, "note": finding.note}))
+            results.append(filled({"id": page_id, "links_checked": report.links_checked, "checker": checker}))
+        return results
 
     def item_for_model(self, item, pages, full=False):
         entry = {"id": item["id"], "criterion": item["criterion"]}
@@ -226,7 +236,8 @@ class Orchestrator:
     async def analyze_pages_tool(self, pages: list[str]):
         """Sends pages to a worker, a smaller model, which checks every link on each page and judges them: whether
         each page the links lead to is a soft 404, whether each redirect is a problem, and whether each link's text
-        matches the page it leads to. Up to {max_pages} pages per call, and only pages with status 200 and HTML.
+        matches the page it leads to. Up to {max_pages} pages per call, and only pages with status 200 and HTML. The
+        pages of one call are judged together, which is faster than sending them in separate calls.
 
         For each page, returns the links the link checker found broken, unreachable, blocked, or didn't request
         because they look like actions; these are facts, and one already returned for another page isn't repeated.
@@ -245,7 +256,7 @@ class Orchestrator:
             return {"error": f"send at most {ORCHESTRATOR.pages_per_call} pages per call"}
         analyzable = set(self.to_analyze())
         judged_before = set(self.items())
-        results, problems = [], {}
+        to_analyze, problems = [], {}
         for page_id in unique(pages):
             if page_id not in self.pages:
                 problems[page_id] = "there is no page with this id"
@@ -254,7 +265,8 @@ class Orchestrator:
             elif page_id in self.reports or page_id in self.errors:
                 problems[page_id] = "already analyzed"
             else:
-                results.append(await self.analyze_page(page_id))
+                to_analyze.append(page_id)
+        results = await self.analyze(to_analyze) if to_analyze else []
 
         batch = {self.pages[result["id"]]["url"] for result in results if "error" not in result}
         new_items, also_on = [], {}
@@ -435,8 +447,12 @@ class Orchestrator:
             skill_files_read=self.skills.files_read,
             worker_model=self.args.worker_model,
             worker_thinking=not self.args.no_think,
-            **{f"worker_{key}": self.worker_usage[key]
+            **{f"worker_{key}": self.judge.usage[key]
                for key in ("llm_requests", "input_tokens", "output_tokens", "truncated_replies", "invalid_replies")},
+            worker_model_s=round(self.judge.usage["model_s"], 1),
+            worker_collect_s=round(self.judge.usage["collect_s"], 1),
+            tools_s=round(usage["tools_s"], 1),
+            crawl_s=self.crawl_s,
             crawl_started_at=self.crawl["started_at"] if self.crawl else None,
             crawl_reused=self.crawl_reused,
             coverage={

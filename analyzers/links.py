@@ -477,7 +477,8 @@ class LinkAnalyzer(Analyzer):
         return f"{ids}\n{skill_body(SKILLS[skill_name])}"
 
     def ask_questions(self, questions):
-        # In this order: a link that fails one question is left out of the later ones
+        # In this order: a link that fails one question is left out of the later ones, so each yield waits for the
+        # answers so far
         questions.ask("broken-links", "Each id is a link that the link checker found broken, unreachable or blocked. "
                                       "Write a note for each id, with likely_intentional saying whether the problem "
                                       "looks deliberate.",
@@ -485,9 +486,11 @@ class LinkAnalyzer(Analyzer):
         questions.ask("soft-404", "Question: soft-404. Each id is a page that a link leads to, and the server answered "
                                   "it with a working status. Fail a page that is a soft 404.",
                       soft_404_entries(self.pages, self.fetched))
+        yield
         questions.ask("redirect", "Question: redirect. Each id is a link that was redirected and ended on a working "
                                   "page. Fail a link whose redirect is a problem.",
                       redirect_entries(self.links, self.checks, failed_links(questions.elements, questions.answers)))
+        yield
         questions.ask("text-mismatch", "Question: text-mismatch. Each id is a link to a working page. Fail a link "
                                        "whose text and destination don't agree.",
                       text_mismatch_entries(self.links, failed_links(questions.elements, questions.answers)))
