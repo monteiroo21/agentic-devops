@@ -15,6 +15,12 @@
         const block = el.parentElement.closest("p, li, td, th, dd, figure, blockquote");
         return block ? clean(block.innerText).slice(0, 300) : null;
     };
+    // the part every page of the site shares: the page's own header, menus and footer. A header or footer inside
+    // an article or a section belongs to that content instead
+    const inLayout = el => {
+        const landmark = el.closest("header, footer, nav, [role=banner], [role=contentinfo], [role=navigation]");
+        return !!landmark && !landmark.parentElement.closest("article, aside, main, section");
+    };
     const seen = [];  // the headings so far, in document order
     const scopes = [];  // the part of the page each heading in seen titles
     // a heading's parent, or further up while the parent holds nothing but the heading,
@@ -44,7 +50,8 @@
         if (/^h\d$/.test(el.localName)) {
             seen.push(el);
             scopes.push(scopeOf(el));
-            headings.push({selector: selector(el), level: Number(el.localName[1]), text: clean(el.innerText)});
+            headings.push({selector: selector(el), level: Number(el.localName[1]), text: clean(el.innerText),
+                           ...(inLayout(el) ? {layout: true} : {})});
         } else if (el.localName === "img") {
             const link = el.closest("a[href]");
             images.push({selector: selector(el), src: el.getAttribute("src"), alt: el.getAttribute("alt"),

@@ -32,6 +32,7 @@ class ModelsConfig(Section):
 
 class GeminiConfig(Section):
     thinking_level: str
+    retry_attempts: int  # tries per request on errors like 429; the waits double from 1 s to 60 s, about 2 min in all
 
 class OllamaConfig(Section):
     url: str
@@ -54,6 +55,7 @@ class BrowserConfig(Section):
     block_private_addresses: bool  # false lets the agent's browser reach a site on this machine, like the test site
     max_content_tokens: int  # the most page text a browser tool returns, like the text after a click
     max_requests: int  # the agent's request limit when it has the browser, since exploring takes more turns
+    screenshot_margin_px: int  # how much of the page around an element a screenshot of it shows
 
 class AccessibilityConfig(Section):
     skills: Path
@@ -82,6 +84,7 @@ class OrchestratorConfig(Section):
     max_requests: int  # the orchestrator's model calls in a run
     pages_per_call: int  # the most pages analyze_pages sends to the workers at once
     evidence_per_call: int  # the most items get_evidence returns at once
+    look_per_call: int  # the most items look_at shows at once
     max_fact_chars: int  # how much of each text analyze_pages shows of what a worker was shown
     max_missing_listed: int  # how many of the pages and items still to do a rejected report lists
 
@@ -167,7 +170,7 @@ def model_name(args):
 def model_and_settings(args):
     return make_model(args.backend, model_name(args), think=not args.no_think,
                       max_output_tokens=args.max_output_tokens, ollama_url=CONFIG.ollama.url,
-                      thinking_level=CONFIG.gemini.thinking_level)
+                      thinking_level=CONFIG.gemini.thinking_level, retry_attempts=CONFIG.gemini.retry_attempts)
 
 # Reports
 

@@ -8,3 +8,4 @@ For every element, give a short reason and then a verdict:
   is unsure, never fail.
 Only fail what breaks the criterion, not what could merely be better. Answer for every id you are given,
 and only for those.
+Write the JSON compactly, with each answer on a single line and no indentation.

@@ -4,8 +4,9 @@ import time
 from collections import Counter
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from pydantic_ai import (Agent, ModelRetry, RetryPromptPart, Tool, ToolOutput, ToolReturnPart, UnexpectedModelBehavior,
-                         UsageLimitExceeded, UsageLimits)
+from pydantic_ai import (Agent, BinaryContent, ModelAPIError, ModelRetry, RetryPromptPart, Tool, ToolOutput,
+                         ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, UsageLimits)
+from pydantic_ai.capabilities import ProcessHistory
 from analyzers import ANALYZERS
 from chat_backends import read_response
 from common import (CONFIG, make_parser, model_and_settings, model_name, parse_args, report_fields, report_path,
@@ -57,15 +58,23 @@ class SkillTools:
     def tools(self):
         return [Tool(self.load_skill), Tool(self.read_skill_file)]
 
+def printable(value):
+    # an image a tool returns, like a screenshot, by its size rather than its bytes
+    if isinstance(value, BinaryContent):
+        return f"<{value.media_type}, {len(value.data)} bytes>"
+    return str(value)
+
 def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(), session=None,
-              request_limit=CONFIG.agent.max_requests):
+              request_limit=CONFIG.agent.max_requests, process_history=None):
+    # process_history rewrites the conversation before each model request, like clearing results no longer needed
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
     output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
     agent = Agent(model, instructions=system_prompt, tools=tools, toolsets=toolsets, model_settings=settings,
                   output_type=ToolOutput(submission, name="submit_report"),
-                  retries={"tools": limits.max_tool_retries, "output": output_retries})
+                  retries={"tools": limits.max_tool_retries, "output": output_retries},
+                  capabilities=[ProcessHistory(process_history)] if process_history else None)
     usage = Counter()
 
     @agent.output_validator
@@ -103,7 +112,7 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
         # prints what goes back to the model: tool results, and what it is asked to fix
         for part in request.parts:
             if isinstance(part, ToolReturnPart):
-                result = json.dumps(part.content, indent=2, ensure_ascii=False, default=str)
+                result = json.dumps(part.content, indent=2, ensure_ascii=False, default=printable)
                 print(f"=====Result of {part.tool_name}=====\n{result}\n")
             elif isinstance(part, RetryPromptPart):
                 print(f"=====Sent back to {name}=====\n{part.model_response()}\n")
@@ -129,8 +138,9 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
 
     try:
         submitted = asyncio.run(run())
-    except (UnexpectedModelBehavior, UsageLimitExceeded) as e:
-        # out of retries, a reply cut off in the middle of a tool call, or the request limit
+    except (UnexpectedModelBehavior, UsageLimitExceeded, ModelAPIError) as e:
+        # out of retries, a reply cut off in the middle of a tool call, the request limit, or an error from the
+        # model's API that its own retries didn't get past, like a rate limit
         print(f"=====The run stopped: {e}=====")
         submitted = None
 

@@ -3,6 +3,7 @@ models:
   ollama: qwen3:4b-instruct
 gemini:
   thinking_level: HIGH
+  retry_attempts: 8
 ollama:
   url: http://localhost:11434/v1
   max_output_tokens: 4096
@@ -22,6 +23,7 @@ browser:
   block_private_addresses: false
   max_content_tokens: 4000
   max_requests: 80
+  screenshot_margin_px: 40
 
 accessibility:
   skills: skills/accessibility
@@ -50,6 +52,7 @@ orchestrator:
   max_requests: 150
   pages_per_call: 10
   evidence_per_call: 10
+  look_per_call: 5
   max_fact_chars: 100
   max_missing_listed: 30
 

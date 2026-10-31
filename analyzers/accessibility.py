@@ -311,6 +311,7 @@ class AccessibilityAnalyzer(Analyzer):
         self.loaded_url = None
         self.actions = []  # what the agent did since loading the page
         self.changed = False  # whether it did anything since the last check
+        self.lands_on = None  # in the workflow, the page of the site the browser ended on instead of this one
 
     @staticmethod
     def add_arguments(parser):
@@ -324,7 +325,7 @@ class AccessibilityAnalyzer(Analyzer):
                                  "--backend ollama")
 
     def finish(self):
-        if self.axe is not None:
+        if self.axe is not None and getattr(self.args, "output", None):
             save_axe(self.axe, self.args)
 
     def axe_version(self):
@@ -448,6 +449,13 @@ class AccessibilityAnalyzer(Analyzer):
             if result["error"]:
                 print(f"====={tool_name} could not load {self.args.url}: {result['error']}=====")
         self.axe, self.content = axe_result["axe"], content_result["content"]
+        # a page that ends on another page checked on its own, like one that refreshes to the home page, isn't
+        # judged again
+        landed = content_result["final_url"]
+        if landed and landed != self.args.url and landed in getattr(self.args, "checked_elsewhere", ()):
+            print(f"====={self.args.url} lands on {landed}, which is checked on its own=====")
+            self.lands_on = landed
+            return False
         return self.axe is not None or self.content is not None
 
     def instructions(self, skill_name, ids):
@@ -493,9 +501,8 @@ class AccessibilityAnalyzer(Analyzer):
             add("link-purpose", "Each id is a group of links with the same text that lead to different places.", [
                 (element_id, group_for_model(group), {"selector": ", ".join(link["selector"] for link in group)})
                 for element_id, group in with_ids(repeated_link_texts(content["links"]), "repeat")])
-            add("page-title", 'The id "title" is the page, with its title, first headings and the start of its '
-                              'text.', [
-                ("title", {"title": content["title"],
+            add("page-title", "Each id is a page, with its title, first headings and the start of its text.", [
+                ("page-1", {"title": content["title"],
                            "headings": [heading["text"]
                                         for heading in content["headings"][:ACCESSIBILITY.max_title_headings]],
                            "text": content["text"][:ACCESSIBILITY.max_title_text_chars]},
@@ -508,11 +515,21 @@ class AccessibilityAnalyzer(Analyzer):
                 + [(element_id, without(part, "selector"), {"selector": part["selector"]})
                    for element_id, part in with_ids(content["parts"], "part")],
                 batched=False)
+            # the headings every page shares, like the footer's, are judged once for the site, each with the
+            # outline of that part of the page around it
+            own = [heading for heading in content["headings"] if not heading.get("layout")]
+            shared = [heading for heading in content["headings"] if heading.get("layout")]
             add("heading", "Each id is a heading.", [
                 (element_id, item_for_model(without(heading, "selector"), "text"),
                  {"selector": heading["selector"]})
-                for element_id, heading in with_ids(content["headings"], "h")],
+                for element_id, heading in with_ids(own, "h")],
                 batched=False)
+            outline = [f"h{heading['level']} {heading['text']}" for heading in shared]
+            add("heading", "Each id is a heading in the part every page of the site shares, like its header or "
+                           "footer, with the outline of the headings there.", [
+                (element_id, {**item_for_model(without(heading, "selector", "layout"), "text"), "outline": outline},
+                 {"selector": heading["selector"]})
+                for element_id, heading in with_ids(shared, "shared")])
 
     def workflow_report(self, questions):
         findings, verdicts = build_findings(self.axe, questions.elements, questions.answers.by_id,

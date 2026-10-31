@@ -81,6 +81,24 @@ async def visit(url, key, collect):
         result["error"] = message.splitlines()[0] if message else type(e).__name__
     return result
 
+async def screenshot(url, selector=None, margin=BROWSER.screenshot_margin_px):
+    # the element with a little of the page around it, or the top of the page when there is no element
+    async def shoot(page):
+        await settle(page)
+        if not selector:
+            return await page.screenshot()
+        element = page.locator(selector).first
+        await element.scroll_into_view_if_needed(timeout=BROWSER.settle_timeout_ms)
+        box = await element.bounding_box()
+        if box is None:
+            raise ValueError(f"the element {selector} isn't visible")
+        viewport = page.viewport_size
+        x, y = max(box["x"] - margin, 0), max(box["y"] - margin, 0)
+        return await page.screenshot(clip={"x": x, "y": y,
+                                           "width": min(box["width"] + 2 * margin, viewport["width"] - x),
+                                           "height": min(box["height"] + 2 * margin, viewport["height"] - y)})
+    return await visit(url, "png", shoot)
+
 def page_fields(tool_result, data_key):
     kept = {key: value for key, value in tool_result.items() if key != data_key and value is not None}
     if kept.get("final_url") == tool_result["url"]:
