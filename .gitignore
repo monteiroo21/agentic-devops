@@ -14,4 +14,5 @@ node_modules/
 reports/
 crawls/
 .logfire/
-papers/
+papers/*.pdf
+papers/notes
