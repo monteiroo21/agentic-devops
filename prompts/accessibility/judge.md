@@ -9,3 +9,4 @@ For every element, give a short reason and then a verdict:
 Only fail what breaks the criterion, not what could merely be better. Answer for every id you are given,
 and only for those.
 Write the JSON compactly, with each answer on a single line and no indentation.
+Write each verdict as a list of three values: the element's id, then the reason, then the verdict.

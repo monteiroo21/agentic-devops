@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Tool
 from analyzers.base import Analyzer
 from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Verdict, WorkflowReport, answers_schema, list_skills,
-                    read_prompt, skill_body, split_backed, with_ids)
+                    object_answer, read_prompt, skill_body, split_backed, with_ids)
 from tools.links import (check_page_links, check_url, check_urls, compact, fetch_page_text, link_for_model,
                          page_links_for_model, page_text_for_model)
 
@@ -77,12 +77,12 @@ class Report(AgentReport):
     rejected_claims: list[RejectedClaim] = []  # each distinct claim that was sent back, and its outcome
 
 class LinkNote(BaseModel):
-    FORMAT: ClassVar = ("notes", answers_schema("notes", {
+    FORMAT: ClassVar = ("notes", answers_schema("notes", object_answer({
         "id": {"type": "string"},
         "note": {"type": "string"},
         "likely_intentional": {"type": "boolean"},
         "suggested_fix": {"type": "string"},
-    }, ["id", "note", "likely_intentional"]))
+    }, ["id", "note", "likely_intentional"])))
     id: str
     note: str
     likely_intentional: bool

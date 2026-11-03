@@ -9,7 +9,7 @@ from typing import ClassVar, Literal
 from urllib.parse import urlparse
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 from chat_backends import make_model
 import logfire
 
@@ -317,33 +317,48 @@ def split_backed(items, kind, problem_of):
 
 # Workflow: the answers the analyzers ask for, and how they are counted
 
-def answers_schema(key, properties, required):
+def answers_schema(key, answer):
     return {
         "type": "object",
-        "properties": {
-            key: {"type": "array", "items": {"type": "object", "properties": properties, "required": required}},
-        },
+        "properties": {key: {"type": "array", "items": answer}},
         "required": [key],
     }
+
+def object_answer(properties, required):
+    return {"type": "object", "properties": properties, "required": required}
+
+def list_answer(*positions):
+    # an answer written as a list with one value per position, which takes the model fewer tokens than an object's
+    # keys. The model never sees the schema, so the judge's prompt says what each position is
+    return {"type": "array", "prefixItems": list(positions)}
 
 # FORMAT is the key the answers come under and their JSON schema.
 # The reason comes before the verdict, so the model explains before it decides
 class Verdict(BaseModel):
-    FORMAT: ClassVar = ("verdicts", answers_schema("verdicts", {
-        "id": {"type": "string"},
-        "reason": {"type": "string"},
-        "verdict": {"type": "string", "enum": ["pass", "fail", "unsure"]},
-    }, ["id", "reason", "verdict"]))
+    FIELDS: ClassVar = ("id", "reason", "verdict")  # the positions of an answer's list
+    FORMAT: ClassVar = ("verdicts", answers_schema("verdicts", list_answer(
+        {"type": "string"},
+        {"type": "string"},
+        {"type": "string", "enum": ["pass", "fail", "unsure"]},
+    )))
     id: str
     reason: str
     verdict: Literal["pass", "fail", "unsure"]
 
+    @model_validator(mode="before")
+    @classmethod
+    def from_list(cls, data):
+        # a list with the wrong number of values is left as it is, so it fails like any answer out of format
+        if isinstance(data, list) and len(data) == len(cls.FIELDS):
+            return dict(zip(cls.FIELDS, data))
+        return data
+
 class Note(BaseModel):
-    FORMAT: ClassVar = ("notes", answers_schema("notes", {
+    FORMAT: ClassVar = ("notes", answers_schema("notes", object_answer({
         "id": {"type": "string"},
         "note": {"type": "string"},
         "suggested_fix": {"type": "string"},
-    }, ["id", "note"]))
+    }, ["id", "note"])))
     id: str
     note: str
     suggested_fix: str | None = None

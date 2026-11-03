@@ -10,3 +10,5 @@ item or the question. Then give the verdict:
   is unsure, never fail.
 Answer for every id you are given, and only for those.
 Write the JSON compactly, with each answer on a single line and no indentation.
+Write each verdict as a list of the item's id, the reason and the verdict, in that order, like
+["link-3", "'Membership' = heading 'Become a member'", "pass"].
