@@ -3,6 +3,7 @@ name: page-title
 description: Judge whether the page title says what the page is about (WCAG 2.4.2). Use it on the title returned by
   get_page_content.
 metadata:
+  help-url: "https://www.w3.org/WAI/WCAG22/Understanding/page-titled.html"
   wcag: "wcag242"
   needs-selector: "false"
 ---

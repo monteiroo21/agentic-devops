@@ -3,6 +3,7 @@ name: heading
 description: Judge whether each heading describes the section under it, and whether the heading levels show how the
   page is organised (WCAG 1.3.1 and 2.4.6). Use it on the headings returned by get_page_content.
 metadata:
+  help-url: "https://www.w3.org/WAI/WCAG22/Understanding/headings-and-labels.html"
   wcag: "wcag131 wcag246"
   elements: "headings"
   needs-selector: "false"

@@ -9,11 +9,12 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
 from pydantic_ai import BinaryContent, ModelRequest, ModelResponse, Tool, ToolCallPart, ToolReturnPart
 from agent import SkillTools, run_agent
-from analyzers.accessibility import WCAG_FOR_RULE, AccessibilityAnalyzer
+from analyzers.accessibility import HELP_URL_FOR_RULE, WCAG_FOR_RULE, AccessibilityAnalyzer
 from analyzers.links import LinkAnalyzer
-from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Verdict, docstring_with, read_prompt, report_fields,
-                    report_path, skills_prompt, trace_to_logfire)
+from common import (CONFIG, IMPACTS, VERDICT_SEVERITY, AgentReport, Verdict, docstring_with, read_prompt,
+                    report_fields, report_path, skills_prompt, trace_to_logfire)
 from crawl import crawl_settings, crawl_site, load_or_crawl, save_crawl
+from report_page import report_page
 from tools.browser import screenshot
 from tools.links import check_url, fetch_page_text, page_text_for_model, remember_results
 from workflow import Judge, Memory, run_workflows
@@ -32,6 +33,12 @@ class Decision(BaseModel):
     item: str = Field(description="The item's id, like i12.")
     verdict: Literal["pass", "fail", "unsure"]
     reason: str = Field(description="What in the item's evidence shows this verdict.")
+    impact: Literal[(*IMPACTS, "none")] = Field(  # pyright: ignore[reportInvalidTypeForm]
+        description="How much the problem hurts the site's visitors. critical: it stops some of them from using the "
+                    "page or reaching what they came for; serious: it makes that much harder; moderate: it gets in "
+                    "their way or misleads them; minor: they would hardly notice. none for a pass.")
+    suggested_fix: str = Field(
+        description="For fail or unsure: how to fix it, in a few words. Empty for a pass, or if you can't tell.")
 
 class LeftOut(BaseModel):
     page: str = Field(description="The page's id, like p3.")
@@ -76,6 +83,9 @@ class SiteFinding(BaseModel):
     severity: str  # error: broken, unreachable or an axe violation, warning: a problem found by a model, info: blocked, redirected or not requested, needs-review: undecided
     url: str  # the link, or for accessibility the first page it is on
     pages: list[str]  # every page it is on
+    impact: str | None = None  # critical, serious, moderate or minor: axe-core's for its violations, the worker's for a broken link, the orchestrator's for an item it decided
+    help: str | None = None  # axe-core's name for the rule
+    help_url: str | None = None  # a page explaining the rule
     selector: str | None = None
     html: str | None = None
     wcag: list[str] = []
@@ -287,8 +297,8 @@ class Orchestrator:
         if full:
             entry["selector"] = item["kept"].get("selector")
             entry["facts"] = item["shown"]
-        elif not (verdict == "pass" and check_of(item) == "accessibility"):
-            entry["facts"] = shortened(item["shown"])  # an accessibility pass has its reason instead, to keep it short
+        else:
+            entry["facts"] = shortened(item["shown"])
         entry["pages"] = pages
         return filled(entry)
 
@@ -392,11 +402,10 @@ class Orchestrator:
         the site, like one that refreshes to the home page, isn't judged again: lands_on says which page it ended on.
 
         For each page, returns the rules axe-core found violated; these are facts. Then returns the items the worker
-        judged for the first time on these pages: each with its id, criterion, verdict, the worker's reason and the
-        pages it came up on. Items other than passes also come with the facts the worker was shown, with long texts
-        shortened; get_evidence returns a pass's facts. A note on a violated rule has a note instead of a verdict. An
-        item that comes up again isn't judged again: also_on lists the items judged on earlier pages that came up on
-        these, with the pages they came up on.
+        judged for the first time on these pages: each with its id, criterion, verdict, the worker's reason, the facts
+        the worker was shown, with long texts shortened, and the pages it came up on. A note on a violated rule has a
+        note instead of a verdict. An item that comes up again isn't judged again: also_on lists the items judged on
+        earlier pages that came up on these, with the pages they came up on.
 
         Args:
             pages: The ids of the pages to check, like p3, as crawl_site listed them.
@@ -552,8 +561,8 @@ class Orchestrator:
                     continue
                 site_finding = findings.setdefault(("links", finding.url, finding.rule), SiteFinding(
                     check="links", rule=finding.rule, severity=finding.severity, url=finding.url, pages=[],
-                    text=finding.text, status=finding.status, error=finding.error, source="checker",
-                    note=finding.note, likely_intentional=finding.likely_intentional,
+                    impact=finding.impact, text=finding.text, status=finding.status, error=finding.error,
+                    source="checker", note=finding.note, likely_intentional=finding.likely_intentional,
                     suggested_fix=finding.suggested_fix))
                 site_finding.pages.append(self.pages[page_id]["url"])
         for page_id, report in self.reports["accessibility"].items():
@@ -564,7 +573,8 @@ class Orchestrator:
                 key = ("accessibility", finding.rule, finding.selector, finding.html)
                 site_finding = findings.setdefault(key, SiteFinding(
                     check="accessibility", rule=finding.rule, severity=finding.severity, url=page_url, pages=[],
-                    selector=finding.selector, html=finding.html, wcag=finding.wcag, source="axe", note=finding.note,
+                    impact=finding.impact, help=finding.help, help_url=finding.help_url, selector=finding.selector,
+                    html=finding.html, wcag=finding.wcag, source="axe", note=finding.note,
                     suggested_fix=finding.suggested_fix))
                 site_finding.pages.append(page_url)
         return list(findings.values())
@@ -576,19 +586,27 @@ class Orchestrator:
             if verdict in ("pass", "note"):
                 continue
             pages, kept = self.item_pages(item), item["kept"]
+            decision = self.decisions.get(item["id"])
+            rated = {}
+            if decision:
+                rated = dict(impact=decision.impact if decision.impact != "none" else None,
+                             suggested_fix=decision.suggested_fix or None)
             if check_of(item) == "accessibility":
                 findings.append(SiteFinding(
                     check="accessibility", rule=kept.get("rule") or item["criterion"],
-                    severity=VERDICT_SEVERITY[verdict], url=pages[0], pages=pages, selector=kept.get("selector"),
-                    html=kept.get("html"), wcag=kept.get("wcag") or WCAG_FOR_RULE.get(item["criterion"], []),
-                    source=source, item=item["id"], verdict=verdict, evidence=reason))
+                    severity=VERDICT_SEVERITY[verdict], url=pages[0], pages=pages, help=kept.get("help"),
+                    help_url=kept.get("help_url") or HELP_URL_FOR_RULE.get(item["criterion"]),
+                    selector=kept.get("selector"), html=kept.get("html"),
+                    wcag=kept.get("wcag") or WCAG_FOR_RULE.get(item["criterion"], []), source=source,
+                    item=item["id"], verdict=verdict, evidence=reason, **rated))
                 continue
             link_item = item["criterion"] != "soft-404"  # a soft-404 item is about a page, not a link
             link_check = check_url(kept["url"]) if link_item else {}
             findings.append(SiteFinding(
                 check="links", rule=kept["rule"], severity=VERDICT_SEVERITY[verdict], url=kept["url"], pages=pages,
                 text=item["shown"].get("text") if link_item else None, status=link_check.get("status"),
-                error=link_check.get("error"), source=source, item=item["id"], verdict=verdict, evidence=reason))
+                error=link_check.get("error"), source=source, item=item["id"], verdict=verdict, evidence=reason,
+                **rated))
         return findings
 
     def item_results(self):
@@ -732,7 +750,9 @@ def main():
     report = orchestrator.site_report(submitted, lead, started_at, start, usage)
     path = report_path("orchestrator", lead)
     path.write_text(report.model_dump_json(indent=2))
-    print(f"=====Report saved to {path}=====")
+    page = path.with_suffix(".html")
+    page.write_text(report_page(report.model_dump(mode="json")))
+    print(f"=====Report saved to {path}, and as a page to {page}=====")
 
 if __name__ == "__main__":
     main()

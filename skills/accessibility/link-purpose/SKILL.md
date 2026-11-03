@@ -3,6 +3,7 @@ name: link-purpose
 description: Judge whether a user can tell where each link goes, from its text alone or from its text together with
   the text around it (WCAG 2.4.4). Use it on the links returned by get_page_content.
 metadata:
+  help-url: "https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context.html"
   wcag: "wcag244"
   elements: "links"
   needs-selector: "true"

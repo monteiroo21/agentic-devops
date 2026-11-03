@@ -20,5 +20,14 @@ example of a broken link, or a test page that demonstrates a 404. A link to a pa
 a product, an article or a contact page, isn't deliberate just because it is broken. likely_intentional says
 whether it looks deliberate, so the note doesn't need to.
 
+impact says how much the problem hurts the site's visitors:
+- critical: it stops them from reaching something they came for, like a broken link to the booking, shop or contact
+  page;
+- serious: it hides content they would want, like a broken link to an article or a product, or a missing script
+  the page needs to work;
+- moderate: it gets in their way, but they can find what they want another way, like a broken image or stylesheet;
+- minor: they would hardly notice, like a broken link to an old page, or one the server refused the checker that
+  may well work in a browser.
+
 Suggest a fix in a few words if you can tell: correct a mistyped URL, link to the page's new address, remove a
 link to a page that is gone, or fix the redirect loop.

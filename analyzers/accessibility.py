@@ -37,6 +37,7 @@ SKILLS = list_skills(ACCESSIBILITY.skills)
 CRITERIA = [skill for skill in SKILLS.values() if skill.rules()]
 AgentRule = Literal[tuple(skill.name for skill in CRITERIA)]
 WCAG_FOR_RULE = {skill.name: skill.values("wcag") for skill in CRITERIA}
+HELP_URL_FOR_RULE = {skill.name: skill.metadata["help-url"] for skill in CRITERIA if "help-url" in skill.metadata}
 ELEMENT_LISTS = {skill.name: skill.metadata["elements"] for skill in CRITERIA if "elements" in skill.metadata}
 NEEDS_SELECTOR = {skill.name for skill in CRITERIA if skill.flag("needs-selector")}
 
@@ -73,6 +74,9 @@ class Finding(BaseModel):
     source: str  # axe or agent
     html: str | None = None
     summary: str | None = None  # axe's explanation
+    impact: str | None = None  # axe's, for a violation: critical, serious, moderate or minor
+    help: str | None = None  # axe's name for the rule, like "Images must have alternate text"
+    help_url: str | None = None  # axe's page explaining the rule
     verdict: str | None = None  # the agent's decision on an element axe could not decide
     evidence: str | None = None
     note: str | None = None
@@ -187,6 +191,9 @@ def axe_report_findings(states, assessments, reviews):
             state=state.id,
             html=node["html"][:ACCESSIBILITY.max_html_chars],
             summary=node.get("failureSummary"),
+            impact=rule["impact"],
+            help=rule["help"],
+            help_url=rule.get("helpUrl"),
             note=assessment.note if assessment else None,
             suggested_fix=assessment.suggested_fix if assessment else None,
         ))
@@ -201,6 +208,8 @@ def axe_report_findings(states, assessments, reviews):
             state=state.id,
             html=node["html"][:ACCESSIBILITY.max_html_chars],
             summary=node.get("failureSummary"),
+            help=rule["help"],
+            help_url=rule.get("helpUrl"),
             verdict=review.verdict if review else None,
             evidence=review.evidence if review else None,
             note=review.note if review else None,
@@ -215,6 +224,7 @@ def agent_report_finding(finding):
         selector=finding.selector,
         source="agent",
         state=finding.state,
+        help_url=HELP_URL_FOR_RULE.get(finding.rule),
         evidence=finding.evidence,
         note=finding.note,
         suggested_fix=finding.suggested_fix,
@@ -257,6 +267,9 @@ def build_findings(axe, elements, answers, omitted):
                     source="axe",
                     html=node["html"][:ACCESSIBILITY.max_html_chars],
                     summary=node.get("failureSummary"),
+                    impact=rule["impact"],
+                    help=rule["help"],
+                    help_url=rule.get("helpUrl"),
                     note=note.note if note else None,
                     suggested_fix=note.suggested_fix if note else None,
                 ))
@@ -285,6 +298,8 @@ def build_findings(axe, elements, answers, omitted):
             source="axe" if from_axe else "model",
             html=element.get("html"),
             summary=element.get("summary"),
+            help=element.get("help"),
+            help_url=element.get("help_url") if from_axe else HELP_URL_FOR_RULE.get(element["criterion"]),
             verdict=verdict,
             evidence=answer.reason if answer else None,
         ))
@@ -486,7 +501,8 @@ class AccessibilityAnalyzer(Analyzer):
                 (element_id, {"rule": rule["id"], "help": rule["help"], "html": node["html"][:html_chars],
                               "problems": check_messages(node)},
                  {"rule": rule["id"], "wcag": wcag_tags(rule), "selector": axe_selector(node),
-                  "html": node["html"][:html_chars], "summary": node.get("failureSummary")})
+                  "html": node["html"][:html_chars], "summary": node.get("failureSummary"), "help": rule["help"],
+                  "help_url": rule.get("helpUrl")})
                 for element_id, (rule, node) in with_ids(to_review, "review")], skill="axe-results")
 
         if content is not None:

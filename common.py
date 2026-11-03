@@ -364,6 +364,8 @@ class Note(BaseModel):
     suggested_fix: str | None = None
 
 VERDICT_SEVERITY = {"pass": "info", "fail": "warning", "unsure": "needs-review", "unanswered": "needs-review"}
+IMPACTS = ("critical", "serious", "moderate", "minor")
+Impact = Literal[IMPACTS]
 
 def with_ids(items, prefix):
     return [(f"{prefix}-{number}", item) for number, item in enumerate(items, 1)]

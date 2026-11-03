@@ -25,12 +25,14 @@ pages is judged once. A note on a broken link or on a violated rule has no verdi
 - Decide on every item a worker failed, was unsure about or left unanswered: confirm its verdict or change it.
 - Look through the passes too. A pass that is wrong hides a problem, and a missed problem is worse than a false
   alarm. Check every pass whose facts suggest a problem, and change it when the evidence shows one. In
-  accessibility, most of the workers' mistakes are passes, so its passes come with the worker's reason: read it too.
+  accessibility, most of the workers' mistakes are passes, so its passes come with the worker's reason as well as
+  their facts: read both.
 
 Before you decide on an item, read its evidence with get_evidence and load the skill for its criterion with
 load_skill. The skill says how to judge it, and the evidence gives you more of the page than the worker saw. A
 decision made without both is refused. Change a verdict only when the evidence shows the worker was wrong, and
-say in the reason what in the evidence shows it.
+say in the reason what in the evidence shows it. For a fail or unsure, also give its impact and, if you can tell,
+a suggested fix: the report shows them to the site's owners, worst problems first.
 
 The workers and axe-core only read a page's code and text: none of them sees the page. look_at shows you how an
 accessibility item looks on its page.

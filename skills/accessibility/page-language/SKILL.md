@@ -4,6 +4,7 @@ description: Judge whether the page's lang attribute matches the language of its
   another language has a lang of its own (WCAG 3.1.1 and 3.1.2). Use it on the lang, text and parts returned by
   get_page_content.
 metadata:
+  help-url: "https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html"
   wcag: "wcag311 wcag312"
   elements: "parts"
   needs-selector: "false"

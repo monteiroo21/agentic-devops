@@ -5,8 +5,8 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field
 from pydantic_ai import Tool
 from analyzers.base import Analyzer
-from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Verdict, WorkflowReport, answers_schema, list_skills,
-                    object_answer, read_prompt, skill_body, split_backed, with_ids)
+from common import (CONFIG, IMPACTS, VERDICT_SEVERITY, AgentReport, Impact, Verdict, WorkflowReport, answers_schema,
+                    list_skills, object_answer, read_prompt, skill_body, split_backed, with_ids)
 from tools.links import (check_page_links, check_url, check_urls, compact, fetch_page_text, link_for_model,
                          page_links_for_model, page_text_for_model)
 
@@ -66,6 +66,7 @@ class Finding(BaseModel):
     evidence: str | None = None
     note: str | None = None
     likely_intentional: bool | None = None
+    impact: str | None = None  # the workflow model's, for a broken link: critical, serious, moderate or minor
     suggested_fix: str | None = None
 
 class Report(AgentReport):
@@ -81,11 +82,13 @@ class LinkNote(BaseModel):
         "id": {"type": "string"},
         "note": {"type": "string"},
         "likely_intentional": {"type": "boolean"},
+        "impact": {"type": "string", "enum": list(IMPACTS)},
         "suggested_fix": {"type": "string"},
-    }, ["id", "note", "likely_intentional"])))
+    }, ["id", "note", "likely_intentional", "impact"])))
     id: str
     note: str
     likely_intentional: bool
+    impact: Impact | None = None  # pyright: ignore[reportInvalidTypeForm]
     suggested_fix: str | None = None
 
 class LinkVerdict(BaseModel):
@@ -135,6 +138,7 @@ def build_findings(checks, link_info, notes):
             source="checker",
             note=note.note if note else None,
             likely_intentional=note.likely_intentional if note else None,
+            impact=getattr(note, "impact", None),
             suggested_fix=note.suggested_fix if note else None,
         ))
     return findings
@@ -481,7 +485,7 @@ class LinkAnalyzer(Analyzer):
         # answers so far
         questions.ask("broken-links", "Each id is a link that the link checker found broken, unreachable or blocked. "
                                       "Write a note for each id, with likely_intentional saying whether the problem "
-                                      "looks deliberate.",
+                                      "looks deliberate, and impact how much it hurts the site's visitors.",
                       broken_entries(self.links), answer=LinkNote)
         questions.ask("soft-404", "Question: soft-404. Each id is a page that a link leads to, and the server answered "
                                   "it with a working status. Fail a page that is a soft 404.",

@@ -3,6 +3,7 @@ name: alt-text
 description: Judge whether each image's alt text says what the image adds to the page (WCAG 1.1.1).
   Use it on the images returned by get_page_content.
 metadata:
+  help-url: "https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html"
   wcag: "wcag111"
   elements: "images"
   needs-selector: "true"
