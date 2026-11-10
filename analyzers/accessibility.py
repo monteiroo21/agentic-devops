@@ -251,6 +251,89 @@ def group_for_model(group):
                                        "heading": link["heading"]}.items() if value and value != text}
         for link in group]}
 
+# Each question as (criterion, what its ids are, its entries, its options), from what the tools collected. An entry is
+# (id, what the model sees, what the report keeps)
+
+def axe_violation_questions(axe):
+    html_chars = ACCESSIBILITY.max_html_chars
+    return [("axe-violations", "Each id is a rule that axe-core found violated, with a few of the elements involved. "
+                               "Write a note for each id.", [
+        (element_id, {"rule": rule["id"], "help": rule["help"], "elements_total": len(rule["nodes"]),
+                      "examples": [{"html": node["html"][:html_chars], "problems": check_messages(node)}
+                                   for node in rule["nodes"][:ACCESSIBILITY.max_violation_examples]]},
+         {"rule": rule["id"]})
+        for element_id, rule in with_ids(axe["violations"], "violation")], {"skill": "axe-results", "answer": Note})]
+
+def axe_review_questions(axe):
+    html_chars = ACCESSIBILITY.max_html_chars
+    to_review = [(rule, node) for rule in axe["incomplete"] for node in rule["nodes"]]
+    return [("axe-needs-review", "Each id is an element that axe-core could not decide, with the rule it was checked "
+                                 "against. Answer pass or fail only if the information here shows which; otherwise "
+                                 "answer unsure.", [
+        (element_id, {"rule": rule["id"], "help": rule["help"], "html": node["html"][:html_chars],
+                      "problems": check_messages(node)},
+         {"rule": rule["id"], "wcag": wcag_tags(rule), "selector": axe_selector(node),
+          "html": node["html"][:html_chars], "summary": node.get("failureSummary"), "help": rule["help"],
+          "help_url": rule.get("helpUrl")})
+        for element_id, (rule, node) in with_ids(to_review, "review")], {"skill": "axe-results"})]
+
+def alt_text_questions(content):
+    return [("alt-text", "Each id is an image.", [
+        (element_id, item_for_model(without(image, "selector"), "link_text"), {"selector": image["selector"]})
+        for element_id, image in with_ids(content["images"], "img")], {})]
+
+def link_purpose_questions(content):
+    # no destinations here: whether a link leads where it says is the link checker's job
+    return [
+        ("link-purpose", "Each id is a link.", [
+            (element_id, item_for_model(without(link, "selector", "href"), "text"), {"selector": link["selector"]})
+            for element_id, link in with_ids(content["links"], "link")], {}),
+        ("link-purpose", "Each id is a group of links with the same text that lead to different places.", [
+            (element_id, group_for_model(group), {"selector": ", ".join(link["selector"] for link in group)})
+            for element_id, group in with_ids(repeated_link_texts(content["links"]), "repeat")], {}),
+    ]
+
+def page_title_questions(content):
+    return [("page-title", "Each id is a page, with its title, first headings and the start of its text.", [
+        ("page-1", {"title": content["title"],
+                    "headings": [heading["text"] for heading in content["headings"][:ACCESSIBILITY.max_title_headings]],
+                    "text": content["text"][:ACCESSIBILITY.max_title_text_chars]},
+         {"selector": None})], {})]
+
+def page_language_questions(content):
+    return [("page-language", 'The id "lang" is the page, with its lang and the start of its text. The other ids are '
+                              'the parts of it that have their own lang.',
+             [("lang", item_for_model({"lang": content["lang"], "text": content["text"][:ACCESSIBILITY.max_text_chars]},
+                                      "text"),
+               {"selector": None})]
+             + [(element_id, without(part, "selector"), {"selector": part["selector"]})
+                for element_id, part in with_ids(content["parts"], "part")],
+             {"batched": False})]
+
+def heading_questions(content):
+    # the headings every page shares, like the footer's, are judged once for the site, each with the outline of that
+    # part of the page around it
+    own = [heading for heading in content["headings"] if not heading.get("layout")]
+    shared = [heading for heading in content["headings"] if heading.get("layout")]
+    outline = [f"h{heading['level']} {heading['text']}" for heading in shared]
+    return [
+        ("heading", "Each id is a heading.", [
+            (element_id, item_for_model(without(heading, "selector"), "text"), {"selector": heading["selector"]})
+            for element_id, heading in with_ids(own, "h")], {"batched": False}),
+        ("heading", "Each id is a heading in the part every page of the site shares, like its header or footer, with "
+                    "the outline of the headings there.", [
+            (element_id, {**item_for_model(without(heading, "selector", "layout"), "text"), "outline": outline},
+             {"selector": heading["selector"]})
+            for element_id, heading in with_ids(shared, "shared")], {}),
+    ]
+
+AXE_QUESTIONS = (axe_violation_questions, axe_review_questions)
+# in the order the workflow asks them, by the name a fleet specialist asks them under
+QUESTIONS = {"axe-violations": axe_violation_questions, "axe-needs-review": axe_review_questions,
+             "alt-text": alt_text_questions, "link-purpose": link_purpose_questions,
+             "page-title": page_title_questions, "page-language": page_language_questions,
+             "heading": heading_questions}
+
 def build_findings(axe, elements, answers, omitted):
     findings, verdicts = [], []
     if axe is not None:
@@ -481,71 +564,15 @@ class AccessibilityAnalyzer(Analyzer):
             criterion = f"Criterion: {skill.name} (WCAG {numbers}). "
         return f"{criterion}{ids}\n{skill_body(skill)}"
 
+    def questions_for(self, name, questions):
+        # axe's questions need its results and the others the page's content: none if that tool couldn't read it
+        builder = QUESTIONS[name]
+        source = self.axe if builder in AXE_QUESTIONS else self.content
+        return builder(source) if source is not None else []
+
     def ask_questions(self, questions):
-        add = questions.ask
-        axe, content = self.axe, self.content
-
-        if axe is not None:
-            html_chars = ACCESSIBILITY.max_html_chars
-            add("axe-violations", "Each id is a rule that axe-core found violated, with a few of the elements "
-                                  "involved. Write a note for each id.", [
-                (element_id, {"rule": rule["id"], "help": rule["help"], "elements_total": len(rule["nodes"]),
-                              "examples": [{"html": node["html"][:html_chars], "problems": check_messages(node)}
-                                           for node in rule["nodes"][:ACCESSIBILITY.max_violation_examples]]},
-                 {"rule": rule["id"]})
-                for element_id, rule in with_ids(axe["violations"], "violation")], skill="axe-results", answer=Note)
-            to_review = [(rule, node) for rule in axe["incomplete"] for node in rule["nodes"]]
-            add("axe-needs-review", "Each id is an element that axe-core could not decide, with the rule it was "
-                                    "checked against. Answer pass or fail only if the information here shows which; "
-                                    "otherwise answer unsure.", [
-                (element_id, {"rule": rule["id"], "help": rule["help"], "html": node["html"][:html_chars],
-                              "problems": check_messages(node)},
-                 {"rule": rule["id"], "wcag": wcag_tags(rule), "selector": axe_selector(node),
-                  "html": node["html"][:html_chars], "summary": node.get("failureSummary"), "help": rule["help"],
-                  "help_url": rule.get("helpUrl")})
-                for element_id, (rule, node) in with_ids(to_review, "review")], skill="axe-results")
-
-        if content is not None:
-            add("alt-text", "Each id is an image.", [
-                (element_id, item_for_model(without(image, "selector"), "link_text"), {"selector": image["selector"]})
-                for element_id, image in with_ids(content["images"], "img")])
-            # no destinations here: whether a link leads where it says is the link checker's job
-            add("link-purpose", "Each id is a link.", [
-                (element_id, item_for_model(without(link, "selector", "href"), "text"),
-                 {"selector": link["selector"]})
-                for element_id, link in with_ids(content["links"], "link")])
-            add("link-purpose", "Each id is a group of links with the same text that lead to different places.", [
-                (element_id, group_for_model(group), {"selector": ", ".join(link["selector"] for link in group)})
-                for element_id, group in with_ids(repeated_link_texts(content["links"]), "repeat")])
-            add("page-title", "Each id is a page, with its title, first headings and the start of its text.", [
-                ("page-1", {"title": content["title"],
-                           "headings": [heading["text"]
-                                        for heading in content["headings"][:ACCESSIBILITY.max_title_headings]],
-                           "text": content["text"][:ACCESSIBILITY.max_title_text_chars]},
-                 {"selector": None})])
-            add("page-language", 'The id "lang" is the page, with its lang and the start of its text. The other ids '
-                                 'are the parts of it that have their own lang.',
-                [("lang", item_for_model({"lang": content["lang"],
-                                          "text": content["text"][:ACCESSIBILITY.max_text_chars]}, "text"),
-                  {"selector": None})]
-                + [(element_id, without(part, "selector"), {"selector": part["selector"]})
-                   for element_id, part in with_ids(content["parts"], "part")],
-                batched=False)
-            # the headings every page shares, like the footer's, are judged once for the site, each with the
-            # outline of that part of the page around it
-            own = [heading for heading in content["headings"] if not heading.get("layout")]
-            shared = [heading for heading in content["headings"] if heading.get("layout")]
-            add("heading", "Each id is a heading.", [
-                (element_id, item_for_model(without(heading, "selector"), "text"),
-                 {"selector": heading["selector"]})
-                for element_id, heading in with_ids(own, "h")],
-                batched=False)
-            outline = [f"h{heading['level']} {heading['text']}" for heading in shared]
-            add("heading", "Each id is a heading in the part every page of the site shares, like its header or "
-                           "footer, with the outline of the headings there.", [
-                (element_id, {**item_for_model(without(heading, "selector", "layout"), "text"), "outline": outline},
-                 {"selector": heading["selector"]})
-                for element_id, heading in with_ids(shared, "shared")])
+        for name in QUESTIONS:
+            self.ask(name, questions)
 
     def workflow_report(self, questions):
         findings, verdicts = build_findings(self.axe, questions.elements, questions.answers.by_id,

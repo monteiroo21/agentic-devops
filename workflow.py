@@ -201,9 +201,10 @@ class Questions:
         self.answers = Answers()
         self.unrecorded = []  # what the memory keeps once the judge has answered
 
-    def ask(self, criterion, ids, entries, skill=None, **options):
-        # ids says what each entry is; the skill says how to judge it, and is the criterion's own unless given.
-        # The judge answers at the page's next yield, or once it has asked all its questions
+    def prepare(self, criterion, ids, entries, skill=None, **options):
+        # keeps a question's elements and the answers already known for them, and returns its task: the elements
+        # still to judge, if there are any. ids says what each entry is; the skill says how to judge it, and is the
+        # criterion's own unless given
         instructions = self.instructions(skill or criterion, ids)
         batched = options.get("batched", True)
         known = {}
@@ -214,9 +215,13 @@ class Questions:
         self.answers.by_id.update(known)
         tasks = []
         add_task(tasks, self.elements, criterion, instructions, entries, known, **options)
-        self.judge.queue += [(self, task) for task in tasks]
         if self.memory is not None:
             self.unrecorded.append((criterion, skill or criterion, instructions, entries, batched))
+        return tasks
+
+    def ask(self, criterion, ids, entries, skill=None, **options):
+        # the judge answers at the page's next yield, or once it has asked all its questions
+        self.judge.queue += [(self, task) for task in self.prepare(criterion, ids, entries, skill, **options)]
 
     def key(self, task, item):
         # in a site run, elements shown alike get one answer, as the memory keeps them as one item
@@ -252,20 +257,24 @@ async def run_workflows(analyzers, judge, memory=None):
         for _, questions in pages:
             questions.record()
 
-    reports = {}
-    for analyzer, questions in pages:
-        findings, verdicts, fields = analyzer.workflow_report(questions)
-        reports[analyzer] = analyzer.workflow_report_type(
-            **report_fields(analyzer.args, started_at, start, judge.usage),
-            counts=dict(Counter(finding.severity for finding in findings)),
-            invalid_replies=judge.usage["invalid_replies"],
-            batch_size=judge.batch_size,
-            criteria=criteria_counts(verdicts, judge.invented),
-            findings=findings,
-            verdicts=verdicts,
-            **fields,
-        )
+    reports = {analyzer: page_report(analyzer, questions, judge.usage, judge.batch_size, judge.invented, started_at,
+                                     start)
+               for analyzer, questions in pages}
     return [reports.get(analyzer) for analyzer in analyzers]
+
+def page_report(analyzer, questions, usage, batch_size, invented, started_at, start):
+    # one page's report, from the elements and answers of its questions
+    findings, verdicts, fields = analyzer.workflow_report(questions)
+    return analyzer.workflow_report_type(
+        **report_fields(analyzer.args, started_at, start, usage),
+        counts=dict(Counter(finding.severity for finding in findings)),
+        invalid_replies=usage["invalid_replies"],
+        batch_size=batch_size,
+        criteria=criteria_counts(verdicts, invented),
+        findings=findings,
+        verdicts=verdicts,
+        **fields,
+    )
 
 def main():
     trace_to_logfire()

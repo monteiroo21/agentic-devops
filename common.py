@@ -88,6 +88,15 @@ class OrchestratorConfig(Section):
     max_fact_chars: int  # how much of each text analyze_pages shows of what a worker was shown
     max_missing_listed: int  # how many of the pages and items still to do a rejected report lists
 
+class FleetConfig(Section):
+    agents: Path  # coordinator.md, the orchestrator's prompt, and specialists/<name>.md, each specialist's definition
+    specialists: list[str]  # the specialists the orchestrator can use, in the order its prompt lists them
+    max_requests: int  # the orchestrator's model calls in a run
+    pages_per_call: int  # the most pages delegate sends to a specialist at once
+    specialist_max_requests: int  # a specialist's model calls on one page
+    max_reason_chars: int  # how much of a specialist's reason or note delegate shows the orchestrator
+    max_missing_listed: int  # how many specialists still to run a rejected report lists
+
 class CrawlConfig(Section):
     folder: Path
     max_age_hours: float  # a site run reuses a crawl with the same start, scope and settings younger than this
@@ -111,6 +120,7 @@ class Config(Section):
     accessibility: AccessibilityConfig
     links: LinksConfig
     orchestrator: OrchestratorConfig
+    fleet: FleetConfig
     crawl: CrawlConfig
 
 def load_config(path=CONFIG_PATH):
@@ -121,6 +131,7 @@ def load_config(path=CONFIG_PATH):
     config.links.skills = path.parent / config.links.skills
     config.links.prompts = path.parent / config.links.prompts
     config.orchestrator.prompts = path.parent / config.orchestrator.prompts
+    config.fleet.agents = path.parent / config.fleet.agents
     config.crawl.folder = path.parent / config.crawl.folder
     return config
 

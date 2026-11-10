@@ -298,6 +298,19 @@ def text_mismatch_entries(links, failed):
     return [(element_id, link_for_model(link), {"url": link["url"], "links": [link["url"]], "rule": "text-mismatch"})
             for element_id, link in with_ids(named, "link")]
 
+# Each question's ids text and options, by the name a fleet specialist asks it under
+QUESTIONS = {
+    "broken-links": ("Each id is a link that the link checker found broken, unreachable or blocked. Write a note for "
+                     "each id, with likely_intentional saying whether the problem looks deliberate, and impact how "
+                     "much it hurts the site's visitors.", {"answer": LinkNote}),
+    "soft-404": ("Question: soft-404. Each id is a page that a link leads to, and the server answered it with a "
+                 "working status. Fail a page that is a soft 404.", {}),
+    "redirect": ("Question: redirect. Each id is a link that was redirected and ended on a working page. Fail a link "
+                 "whose redirect is a problem.", {}),
+    "text-mismatch": ("Question: text-mismatch. Each id is a link to a working page. Fail a link whose text and "
+                      "destination don't agree.", {}),
+}
+
 def failed_links(elements, answers):
     # the links a question has already failed, which the later questions leave out
     return {url for element_id, answer in answers.by_id.items()
@@ -480,24 +493,27 @@ class LinkAnalyzer(Analyzer):
     def instructions(self, skill_name, ids):
         return f"{ids}\n{skill_body(SKILLS[skill_name])}"
 
+    def questions_for(self, name, questions):
+        # redirect and text-mismatch leave out the links an earlier question failed on this page
+        failed = failed_links(questions.elements, questions.answers)
+        entries = {
+            "broken-links": lambda: broken_entries(self.links),
+            "soft-404": lambda: soft_404_entries(self.pages, self.fetched),
+            "redirect": lambda: redirect_entries(self.links, self.checks, failed),
+            "text-mismatch": lambda: text_mismatch_entries(self.links, failed),
+        }[name]()
+        ids, options = QUESTIONS[name]
+        return [(name, ids, entries, options)]
+
     def ask_questions(self, questions):
         # In this order: a link that fails one question is left out of the later ones, so each yield waits for the
         # answers so far
-        questions.ask("broken-links", "Each id is a link that the link checker found broken, unreachable or blocked. "
-                                      "Write a note for each id, with likely_intentional saying whether the problem "
-                                      "looks deliberate, and impact how much it hurts the site's visitors.",
-                      broken_entries(self.links), answer=LinkNote)
-        questions.ask("soft-404", "Question: soft-404. Each id is a page that a link leads to, and the server answered "
-                                  "it with a working status. Fail a page that is a soft 404.",
-                      soft_404_entries(self.pages, self.fetched))
+        self.ask("broken-links", questions)
+        self.ask("soft-404", questions)
         yield
-        questions.ask("redirect", "Question: redirect. Each id is a link that was redirected and ended on a working "
-                                  "page. Fail a link whose redirect is a problem.",
-                      redirect_entries(self.links, self.checks, failed_links(questions.elements, questions.answers)))
+        self.ask("redirect", questions)
         yield
-        questions.ask("text-mismatch", "Question: text-mismatch. Each id is a link to a working page. Fail a link "
-                                       "whose text and destination don't agree.",
-                      text_mismatch_entries(self.links, failed_links(questions.elements, questions.answers)))
+        self.ask("text-mismatch", questions)
 
     def workflow_report(self, questions):
         findings, verdicts = build_report_findings(self.checks, self.link_info, questions.elements, questions.answers)

@@ -64,15 +64,20 @@ def printable(value):
         return f"<{value.media_type}, {len(value.data)} bytes>"
     return str(value)
 
-def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(), session=None,
-              request_limit=CONFIG.agent.max_requests, process_history=None):
-    # process_history rewrites the conversation before each model request, like clearing results no longer needed
+def run_agent(*args, **kwargs):
+    return asyncio.run(run_agent_async(*args, **kwargs))
+
+async def run_agent_async(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(),
+                          session=None, request_limit=CONFIG.agent.max_requests, process_history=None,
+                          output_name="submit_report"):
+    # process_history rewrites the conversation before each model request, like clearing results no longer needed.
+    # Async so that an agent can run inside another agent's tool, like a specialist inside the fleet's orchestrator
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
     output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
     agent = Agent(model, instructions=system_prompt, tools=tools, toolsets=toolsets, model_settings=settings,
-                  output_type=ToolOutput(submission, name="submit_report"),
+                  output_type=ToolOutput(submission, name=output_name),
                   retries={"tools": limits.max_tool_retries, "output": output_retries},
                   capabilities=[ProcessHistory(process_history)] if process_history else None)
     usage = Counter()
@@ -137,7 +142,7 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
                 return agent_run.result.output
 
     try:
-        submitted = asyncio.run(run())
+        submitted = await run()
     except (UnexpectedModelBehavior, UsageLimitExceeded, ModelAPIError) as e:
         # out of retries, a reply cut off in the middle of a tool call, the request limit, or an error from the
         # model's API that its own retries didn't get past, like a rate limit

@@ -185,9 +185,12 @@ class Orchestrator:
         self.rounds = []  # each check call: its check, pages and items
         self.cleared = set()  # the tool calls whose results were cleared from the conversation
         self.skills = SkillTools(SKILLS)
+        self.judges = self.make_judges()
+
+    def make_judges(self):
         # the workers' model, for every page; each check has its own system prompt
-        self.judges = {check: Judge(self.worker_args(check, args.url), analyzer.judge_prompt)
-                       for check, analyzer in CHECKS.items()}
+        return {check: Judge(self.worker_args(check, self.args.url), analyzer.judge_prompt)
+                for check, analyzer in CHECKS.items()}
 
     def items(self):
         return {item["id"]: item for item in self.memory.items.values()}
@@ -212,11 +215,12 @@ class Orchestrator:
             start = time.perf_counter()
             url = self.args.url
             scope = {"mode": "host", "hosts": [urlsplit(url).hostname]}
+            settings = crawl_settings(max_pages=self.args.max_pages)
             if self.args.recrawl:
-                self.crawl = crawl_site(url, scope, crawl_settings())
+                self.crawl = crawl_site(url, scope, settings)
                 save_crawl(self.crawl)
             else:
-                self.crawl = load_or_crawl(url, scope, crawl_settings())
+                self.crawl = load_or_crawl(url, scope, settings)
             self.crawl_reused = datetime.fromisoformat(self.crawl["started_at"]) < self.started
             self.pages = {f"p{number}": page for number, page in enumerate(self.crawl["pages"], 1)}
             self.page_ids = {page["url"]: page_id for page_id, page in self.pages.items()}
@@ -723,9 +727,14 @@ def parse_args():
                         help=f"how many elements a worker judges in one call (default {CONFIG.workflow.batch_size})")
     parser.add_argument("--recrawl", action="store_true",
                         help="crawl the site again, even if a recent crawl of it was saved")
+    parser.add_argument("--max-pages", type=int, default=CONFIG.crawl.max_pages,
+                        help=f"the most pages the crawl requests, nearest the start page first "
+                             f"(default {CONFIG.crawl.max_pages})")
     args = parser.parse_args()
     if urlsplit(args.url).scheme not in ("http", "https") or not urlsplit(args.url).hostname:
         parser.error(f"the URL must start with http:// or https://, got {args.url!r}")
+    if args.max_pages < 1:
+        parser.error("--max-pages must be at least 1")
     if args.batch_size < 1:
         parser.error("--batch-size must be at least 1")
     return args

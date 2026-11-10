@@ -56,6 +56,27 @@ orchestrator:
   max_fact_chars: 100
   max_missing_listed: 30
 
+fleet:
+  agents: agents
+  # in this order in the orchestrator's prompt: soft-404, redirect and text-mismatch run in that order on a page
+  specialists:
+    - axe-violations
+    - axe-needs-review
+    - alt-text
+    - link-purpose
+    - page-title
+    - page-language
+    - heading
+    - broken-links
+    - soft-404
+    - redirect
+    - text-mismatch
+  max_requests: 150
+  pages_per_call: 10
+  specialist_max_requests: 6
+  max_reason_chars: 150
+  max_missing_listed: 30
+
 crawl:
   folder: crawls
   max_age_hours: 24

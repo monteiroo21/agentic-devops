@@ -150,8 +150,11 @@ def tokens(number):
 class ReportPage:
     def __init__(self, report):
         self.report = report
+        # a fleet's specialists have the final say, where the orchestrator reviews its workers' verdicts
+        self.fleet = report.get("mode") == "fleet"
         self.host = urlsplit(report["target"]).hostname
-        self.checked = {check: [page["url"] for page in report["pages"] if page["checks"].get(check) == "analyzed"]
+        self.checked = {check: [page["url"] for page in report["pages"]
+                                if page["checks"].get(check) in ("analyzed", "partly analyzed")]
                         for check in CHECKS}
         self.items = {item["id"]: item for item in report["items"]}
         findings = report["findings"]
@@ -183,6 +186,10 @@ class ReportPage:
             return "The link checker"
         if source == "axe":
             return "axe-core"
+        if self.fleet:
+            if item.get("criterion") == "axe-needs-review":
+                return "axe-core couldn't decide it, so the axe-needs-review specialist judged it"
+            return f"The {escape(item.get('criterion', '?'))} specialist"
         first = ("axe-core couldn't decide it, so a worker model judged it"
                  if item.get("criterion") == "axe-needs-review" else "A worker model")
         if source == "orchestrator":
@@ -244,7 +251,7 @@ class ReportPage:
         report = self.report
         meta = (f'<a href="{escape(report["target"])}">{escape(report["target"])}</a> · {self.started()} · '
                 f'took {duration(report["duration_s"])} · orchestrator {escape(report["model"])}, '
-                f'workers {escape(report["worker_model"])}')
+                f'{"specialists" if self.fleet else "workers"} {escape(report["worker_model"])}')
         return f'<header><h1>Site check of {escape(self.host)}</h1><p class="meta">{meta}</p>{self.tiles()}</header>'
 
     def tiles(self):
@@ -273,8 +280,9 @@ class ReportPage:
 
     def summary(self):
         narrative = self.report.get("narrative")
-        text = (escape(narrative) if narrative
-                else "The orchestrator stopped before it wrote a summary, so some items may not have been reviewed.")
+        unfinished = ("some pages may not have been checked" if self.fleet
+                      else "some items may not have been reviewed")
+        text = escape(narrative) if narrative else f"The orchestrator stopped before it wrote a summary, so {unfinished}."
         return (f'<section aria-labelledby="summary"><h2 id="summary">Summary</h2><p class="narrative">{text}</p>'
                 '</section>')
 
@@ -293,9 +301,10 @@ class ReportPage:
         if not self.to_review:
             return ""
         groups = "".join(self.group(group, review=True) for group in grouped(self.to_review))
-        return ('<section aria-labelledby="review"><h2 id="review">Needs review</h2><p class="note">Neither the '
-                'workers nor the orchestrator could decide these from what the tools showed them, so a person '
-                f'should look at them.</p>{groups}</section>')
+        who = "The specialists couldn't" if self.fleet else "Neither the workers nor the orchestrator could"
+        return ('<section aria-labelledby="review"><h2 id="review">Needs review</h2><p class="note">'
+                f'{who} decide these from what the tools showed them, so a person should look at them.</p>'
+                f'{groups}</section>')
 
     def notices_section(self):
         if not self.notices:
@@ -350,6 +359,14 @@ class ReportPage:
 
     def footer(self):
         report = self.report
+        if self.fleet:
+            runs = len(report["specialist_runs"])
+            return (f'<footer>The orchestrator made {report["llm_requests"]} requests '
+                    f'({tokens(report["input_tokens"])} tokens in, {tokens(report["output_tokens"])} out); the '
+                    f'specialists made {report["worker_llm_requests"]} over {runs} runs '
+                    f'({tokens(report["worker_input_tokens"])} in, {tokens(report["worker_output_tokens"])} out), and '
+                    f'judged {report["coverage"]["items"]["elements_judged"]} elements across pages. Their answers are '
+                    'final: the orchestrator doesn\'t review them.</footer>')
         decisions = report["decisions"]
         changed = ", ".join(f"{kind.replace('->', ' → ')}: {number}" for kind, number in decisions.items()
                             if kind != "confirmed")
