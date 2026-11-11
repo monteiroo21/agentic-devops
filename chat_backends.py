@@ -17,9 +17,13 @@ class Turn:
     output_tokens: int
     truncated: bool = False
 
-def make_model(backend, name, think, max_output_tokens, ollama_url, thinking_level, retry_attempts=None):
+def make_model(backend, name, think, max_output_tokens, ollama_url, thinking_level, retry_attempts=None,
+               ollama_timeout_s=None):
     if backend == "ollama":
+        # a long reply on a CPU can outlast the client's default timeout of 600 s, which drops it and asks again
         settings = OpenAIChatModelSettings(max_tokens=max_output_tokens)
+        if ollama_timeout_s:
+            settings["timeout"] = ollama_timeout_s
         if not think:
             settings["openai_reasoning_effort"] = "none"
         return OllamaModel(name, provider=OllamaProvider(base_url=ollama_url)), settings

@@ -591,7 +591,9 @@ class Orchestrator:
                 continue
             pages, kept = self.item_pages(item), item["kept"]
             decision = self.decisions.get(item["id"])
-            rated = {}
+            # a fleet specialist rates its own fails; here, the orchestrator rates the items it decides
+            answer = item["answer"]
+            rated = dict(impact=getattr(answer, "impact", None), suggested_fix=getattr(answer, "suggested_fix", None))
             if decision:
                 rated = dict(impact=decision.impact if decision.impact != "none" else None,
                              suggested_fix=decision.suggested_fix or None)

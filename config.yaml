@@ -7,6 +7,7 @@ gemini:
 ollama:
   url: http://localhost:11434/v1
   max_output_tokens: 4096
+  timeout_s: 1800
 
 agent:
   max_rejections: 2
@@ -58,7 +59,8 @@ orchestrator:
 
 fleet:
   agents: agents
-  # in this order in the orchestrator's prompt: soft-404, redirect and text-mismatch run in that order on a page
+  # in this order in the orchestrator's prompt: soft-404, redirect and text-mismatch run in that order on a page.
+  # Broken links aren't a specialist's: the orchestrator runs the link checker, a static check, itself
   specialists:
     - axe-violations
     - axe-needs-review
@@ -67,13 +69,13 @@ fleet:
     - page-title
     - page-language
     - heading
-    - broken-links
     - soft-404
     - redirect
     - text-mismatch
   max_requests: 150
   pages_per_call: 10
   specialist_max_requests: 6
+  pages_read_per_call: 30
   max_reason_chars: 150
   max_missing_listed: 30
 

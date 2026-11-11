@@ -37,6 +37,7 @@ class GeminiConfig(Section):
 class OllamaConfig(Section):
     url: str
     max_output_tokens: int
+    timeout_s: float  # how long a request may take before it is dropped and asked again
 
 class AgentConfig(Section):
     max_rejections: int
@@ -92,8 +93,9 @@ class FleetConfig(Section):
     agents: Path  # coordinator.md, the orchestrator's prompt, and specialists/<name>.md, each specialist's definition
     specialists: list[str]  # the specialists the orchestrator can use, in the order its prompt lists them
     max_requests: int  # the orchestrator's model calls in a run
-    pages_per_call: int  # the most pages delegate sends to a specialist at once
-    specialist_max_requests: int  # a specialist's model calls on one page
+    pages_per_call: int  # the most pages delegate or run_static_check takes at once
+    specialist_max_requests: int  # a specialist's model calls on one page, plus one per read_pages call it needs
+    pages_read_per_call: int  # the most pages the soft-404 specialist reads with one read_pages call
     max_reason_chars: int  # how much of a specialist's reason or note delegate shows the orchestrator
     max_missing_listed: int  # how many specialists still to run a rejected report lists
 
@@ -181,7 +183,8 @@ def model_name(args):
 def model_and_settings(args):
     return make_model(args.backend, model_name(args), think=not args.no_think,
                       max_output_tokens=args.max_output_tokens, ollama_url=CONFIG.ollama.url,
-                      thinking_level=CONFIG.gemini.thinking_level, retry_attempts=CONFIG.gemini.retry_attempts)
+                      thinking_level=CONFIG.gemini.thinking_level, retry_attempts=CONFIG.gemini.retry_attempts,
+                      ollama_timeout_s=CONFIG.ollama.timeout_s)
 
 # Reports
 

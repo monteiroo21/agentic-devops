@@ -4,8 +4,8 @@ import time
 from collections import Counter
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from pydantic_ai import (Agent, BinaryContent, ModelAPIError, ModelRetry, RetryPromptPart, Tool, ToolOutput,
-                         ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, UsageLimits)
+from pydantic_ai import (Agent, BinaryContent, ModelAPIError, ModelRetry, RetryPromptPart, TextOutput, Tool,
+                         ToolOutput, ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, UsageLimits)
 from pydantic_ai.capabilities import ProcessHistory
 from analyzers import ANALYZERS
 from chat_backends import read_response
@@ -69,18 +69,32 @@ def run_agent(*args, **kwargs):
 
 async def run_agent_async(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(),
                           session=None, request_limit=CONFIG.agent.max_requests, process_history=None,
-                          output_name="submit_report"):
+                          output_name="submit_report", text_submission=False):
     # process_history rewrites the conversation before each model request, like clearing results no longer needed.
-    # Async so that an agent can run inside another agent's tool, like a specialist inside the fleet's orchestrator
+    # Async so that an agent can run inside another agent's tool, like a specialist inside the fleet's orchestrator.
+    # text_submission also takes the submission from a reply that writes it out as JSON instead of calling the submit
+    # tool, as small models sometimes do
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
     output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
+    usage = Counter()
+
+    def from_text(text: str):
+        start, end = text.find("{"), text.rfind("}")
+        try:
+            submitted = submission.model_validate(json.loads(text[start:end + 1]) if 0 <= start < end else None)
+        except ValueError:  # not JSON, or not in the submission's shape
+            raise ModelRetry(f"Hand in your answers by calling {output_name}.")
+        usage["text_submissions"] += 1
+        print(f"=====Took the submission from {name}'s reply=====")
+        return submitted
+
+    output_type = ToolOutput(submission, name=output_name)
     agent = Agent(model, instructions=system_prompt, tools=tools, toolsets=toolsets, model_settings=settings,
-                  output_type=ToolOutput(submission, name=output_name),
+                  output_type=[output_type, TextOutput(from_text)] if text_submission else output_type,
                   retries={"tools": limits.max_tool_retries, "output": output_retries},
                   capabilities=[ProcessHistory(process_history)] if process_history else None)
-    usage = Counter()
 
     @agent.output_validator
     def check_report(report):
@@ -103,7 +117,9 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
         if turn.truncated:
             print(f"====={name} was cut off at the output token limit=====")
 
-        if not turn.tool_calls:
+        if not turn.tool_calls and text_submission:
+            usage["text_replies"] += 1  # read as a submission, and sent back if it isn't one
+        elif not turn.tool_calls:
             if usage["text_replies"] >= limits.max_text_replies:
                 print(f"====={name} has no more function calls=====")
                 return False

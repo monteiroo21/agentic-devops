@@ -188,7 +188,9 @@ class Memory:
                 "kept": kept, "answer": None, "elements": []})
             if item["answer"] is None:
                 item["answer"] = answers.get(element_id)  # one left unanswered is asked again on its next page
-            item["elements"].append({"page": page, "id": element_id})
+            element = {"page": page, "id": element_id}
+            if element not in item["elements"]:  # a page's question asked again, like a fleet specialist's rerun
+                item["elements"].append(element)
 
 class Questions:
     # what an analyzer asks the judge through, keeping every element and answer of its page for its report
