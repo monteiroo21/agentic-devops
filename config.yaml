@@ -47,6 +47,7 @@ links:
   max_page_bytes: 524288
   max_page_text_chars: 2000
   workflow_page_text_chars: 600
+  summary_words: 50
 
 orchestrator:
   prompts: prompts/orchestrator
@@ -58,24 +59,16 @@ orchestrator:
   max_missing_listed: 30
 
 fleet:
-  agents: agents
-  # in this order in the orchestrator's prompt: soft-404, redirect and text-mismatch run in that order on a page.
-  # Broken links aren't a specialist's: the orchestrator runs the link checker, a static check, itself
-  specialists:
-    - axe-violations
-    - axe-needs-review
-    - alt-text
-    - link-purpose
-    - page-title
-    - page-language
-    - heading
-    - soft-404
-    - redirect
-    - text-mismatch
+  folder: agents  # coordinator.md, the orchestrator's prompt, and <agent>.md, each agent's definition
+  skills: skills  # <agent>/<skill>/SKILL.md, with references/examples.md: each agent's skills
+  agents: [link, page, image, axe-review]
   max_requests: 150
   pages_per_call: 10
-  specialist_max_requests: 6
-  pages_read_per_call: 30
+  tasks_per_call: 10
+  batch_size: 20
+  page_text_words: 150
+  section_words: 15
+  part_words: 30
   max_reason_chars: 150
   max_missing_listed: 30
 

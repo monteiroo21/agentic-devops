@@ -151,7 +151,7 @@ def cleared_note(part):
     return f"Cleared to save space: call {part.tool_name} again to see this result."
 
 def check_of(item):
-    return "links" if item["skill"] in LinkAnalyzer.skills else "accessibility"
+    return item["kept"].get("category") or ("links" if item["skill"] in LinkAnalyzer.skills else "accessibility")
 
 def worker_verdict(item):
     if item["criterion"] in NOTES:

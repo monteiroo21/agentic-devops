@@ -11,7 +11,7 @@ from common import (CONFIG, VERDICT_SEVERITY, AgentReport, Note, WorkflowReport,
                     read_prompt, skill_body, split_backed, with_ids, without)
 from tools.axe import axe_for_model, axe_on, axe_selector, check_messages, run_axe, wcag_number, wcag_tags
 from tools.browser import ActionLog, GuardedSession, settle
-from tools.page_content import content_for_model, content_on, get_page_content, item_for_model
+from tools.page_content import FLEET_IMAGE_FIELDS, content_for_model, content_on, get_page_content, item_for_model
 
 ACCESSIBILITY = CONFIG.accessibility
 BROWSER = CONFIG.browser
@@ -279,7 +279,8 @@ def axe_review_questions(axe):
 
 def alt_text_questions(content):
     return [("alt-text", "Each id is an image.", [
-        (element_id, item_for_model(without(image, "selector"), "link_text"), {"selector": image["selector"]})
+        (element_id, item_for_model(without(image, "selector", *FLEET_IMAGE_FIELDS), "link_text"),
+         {"selector": image["selector"]})
         for element_id, image in with_ids(content["images"], "img")], {})]
 
 def link_purpose_questions(content):

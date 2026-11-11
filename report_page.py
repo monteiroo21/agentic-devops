@@ -150,8 +150,8 @@ def tokens(number):
 class ReportPage:
     def __init__(self, report):
         self.report = report
-        # a fleet's specialists have the final say, where the orchestrator reviews its workers' verdicts
         self.fleet = report.get("mode") == "fleet"
+        self.agent_of = {skill: agent for agent, skills in report.get("agents", {}).items() for skill in skills}
         self.host = urlsplit(report["target"]).hostname
         self.checked = {check: [page["url"] for page in report["pages"]
                                 if page["checks"].get(check) in ("analyzed", "partly analyzed")]
@@ -187,9 +187,11 @@ class ReportPage:
         if source == "axe":
             return "axe-core"
         if self.fleet:
-            if item.get("criterion") == "axe-needs-review":
-                return "axe-core couldn't decide it, so the axe-needs-review specialist judged it"
-            return f"The {escape(item.get('criterion', '?'))} specialist"
+            skill = item.get("criterion", "?")
+            agent = self.agent_of.get(skill, "an agent")
+            if skill == "axe-needs-review":
+                return f"axe-core couldn't decide it, so the {escape(agent)} agent judged it"
+            return f"The {escape(agent)} agent, with its {escape(skill)} skill"
         first = ("axe-core couldn't decide it, so a worker model judged it"
                  if item.get("criterion") == "axe-needs-review" else "A worker model")
         if source == "orchestrator":
@@ -251,7 +253,7 @@ class ReportPage:
         report = self.report
         meta = (f'<a href="{escape(report["target"])}">{escape(report["target"])}</a> · {self.started()} · '
                 f'took {duration(report["duration_s"])} · orchestrator {escape(report["model"])}, '
-                f'{"specialists" if self.fleet else "workers"} {escape(report["worker_model"])}')
+                f'{"agents" if self.fleet else "workers"} {escape(report["worker_model"])}')
         return f'<header><h1>Site check of {escape(self.host)}</h1><p class="meta">{meta}</p>{self.tiles()}</header>'
 
     def tiles(self):
@@ -301,7 +303,7 @@ class ReportPage:
         if not self.to_review:
             return ""
         groups = "".join(self.group(group, review=True) for group in grouped(self.to_review))
-        who = "The specialists couldn't" if self.fleet else "Neither the workers nor the orchestrator could"
+        who = "The agents couldn't" if self.fleet else "Neither the workers nor the orchestrator could"
         return ('<section aria-labelledby="review"><h2 id="review">Needs review</h2><p class="note">'
                 f'{who} decide these from what the tools showed them, so a person should look at them.</p>'
                 f'{groups}</section>')
@@ -360,10 +362,10 @@ class ReportPage:
     def footer(self):
         report = self.report
         if self.fleet:
-            runs = len(report["specialist_runs"])
+            runs = len(report.get("agent_runs", report.get("specialist_runs", [])))
             return (f'<footer>The orchestrator made {report["llm_requests"]} requests '
                     f'({tokens(report["input_tokens"])} tokens in, {tokens(report["output_tokens"])} out); the '
-                    f'specialists made {report["worker_llm_requests"]} over {runs} runs '
+                    f'agents made {report["worker_llm_requests"]} over {runs} runs '
                     f'({tokens(report["worker_input_tokens"])} in, {tokens(report["worker_output_tokens"])} out), and '
                     f'judged {report["coverage"]["items"]["elements_judged"]} elements across pages. Their answers are '
                     'final: the orchestrator doesn\'t review them.</footer>')

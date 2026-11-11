@@ -285,13 +285,6 @@ def soft_404_entries(pages, fetched):
              {"url": url, "links": pages[url], "rule": "soft-404"})
             for element_id, (url, page) in with_ids(read, "page")]
 
-def linked_page_entries(links):
-    # the same pages, for the fleet's soft-404 specialist, which reads the ones it chooses itself. Each is known by its
-    # URL alone, so a page that many pages link to is judged once
-    pages = pages_to_read(links)
-    return [(element_id, {"url": url}, {"url": url, "links": pages[url], "rule": "soft-404"})
-            for element_id, url in with_ids(list(pages), "page")]
-
 def redirect_entries(links, checks, failed):
     redirected = [link for link in links if link["tag"] == "a" and link["check"]["verdict"] == "redirect"
                   and link["url"] not in failed]

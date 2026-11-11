@@ -79,6 +79,7 @@ class LinksConfig(Section):
     max_page_bytes: int
     max_page_text_chars: int
     workflow_page_text_chars: int
+    summary_words: int  # how many of a linked page's first words the link checker keeps, for get_destination_summary
 
 class OrchestratorConfig(Section):
     prompts: Path
@@ -90,14 +91,18 @@ class OrchestratorConfig(Section):
     max_missing_listed: int  # how many of the pages and items still to do a rejected report lists
 
 class FleetConfig(Section):
-    agents: Path  # coordinator.md, the orchestrator's prompt, and specialists/<name>.md, each specialist's definition
-    specialists: list[str]  # the specialists the orchestrator can use, in the order its prompt lists them
+    folder: Path  # coordinator.md, the orchestrator's prompt, and <agent>.md, each agent's definition
+    skills: Path  # <agent>/<skill>/SKILL.md, each agent's skills
+    agents: list[str]  # the agents the orchestrator can use, by file name, in the order its prompt lists them
     max_requests: int  # the orchestrator's model calls in a run
-    pages_per_call: int  # the most pages delegate or run_static_check takes at once
-    specialist_max_requests: int  # a specialist's model calls on one page, plus one per read_pages call it needs
-    pages_read_per_call: int  # the most pages the soft-404 specialist reads with one read_pages call
-    max_reason_chars: int  # how much of a specialist's reason or note delegate shows the orchestrator
-    max_missing_listed: int  # how many specialists still to run a rejected report lists
+    pages_per_call: int  # the most pages run_static_check takes at once
+    tasks_per_call: int  # the most tasks delegate takes at once
+    batch_size: int  # the most links, images or axe-core items one agent run checks; a task with more has more runs
+    page_text_words: int  # how many words of the page's text get_text_sample returns per call
+    section_words: int  # how many words of the text under each heading get_headings returns
+    part_words: int  # how many words of each passage with a lang of its own get_page_meta returns
+    max_reason_chars: int  # how much of an agent's reason delegate shows the orchestrator
+    max_missing_listed: int  # how many agents and static checks still to run a rejected report lists
 
 class CrawlConfig(Section):
     folder: Path
@@ -133,7 +138,8 @@ def load_config(path=CONFIG_PATH):
     config.links.skills = path.parent / config.links.skills
     config.links.prompts = path.parent / config.links.prompts
     config.orchestrator.prompts = path.parent / config.orchestrator.prompts
-    config.fleet.agents = path.parent / config.fleet.agents
+    config.fleet.folder = path.parent / config.fleet.folder
+    config.fleet.skills = path.parent / config.fleet.skills
     config.crawl.folder = path.parent / config.crawl.folder
     return config
 
