@@ -491,9 +491,9 @@ def parse_args():
                         help=f"the agents' Ollama model (default {CONFIG.models.ollama})")
     parser.add_argument("--no-think", action="store_true",
                         help="the agents answer without thinking first, which is much faster on a CPU")
-    parser.add_argument("--max-output-tokens", type=int, default=CONFIG.ollama.max_output_tokens,
+    parser.add_argument("--max-output-tokens", type=int, default=FLEET.max_output_tokens,
                         help="the most tokens an agent may write per turn, thinking included "
-                             f"(default {CONFIG.ollama.max_output_tokens})")
+                             f"(default {FLEET.max_output_tokens})")
     parser.add_argument("--recrawl", action="store_true",
                         help="crawl the site again, even if a recent crawl of it was saved")
     parser.add_argument("--max-pages", type=int, default=CONFIG.crawl.max_pages,

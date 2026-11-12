@@ -5,7 +5,7 @@ description: >-
   promise, whether they lead to what their text says, and whether a user can tell where each one goes.
 skills: [soft-404, redirect, text-mismatch, link-purpose]
 tools: [list_links, get_link_context, get_destination_summary]
-max_steps: 8
+max_steps: 20
 answer: rated-findings
 ---
 
@@ -15,17 +15,21 @@ under "Skills": each one says what to check, when to look closer, how to judge, 
 1. Call list_links with the URL of the page you are asked to check. It lists the links to check, each with an id and
    the skills it needs an answer for.
 2. Decide which links need a closer look, as each skill's "When to look closer" says. Call get_link_context and
-   get_destination_summary only for those, with all their ids in one call to each.
-3. Call submit_findings once, with one finding for every id and skill that list_links listed, and only for those.
+   get_destination_summary only for those, with the ids list_links gave them, like link-3, never their URLs: all
+   the ids in one call to each.
+3. Record your findings with record_findings as you go, at most 10 findings per call: one finding for every id and
+   skill that list_links listed, and only for those. It tells you which findings it refused, and why, and what is
+   still unanswered.
+4. When record_findings shows nothing unanswered, call submit_findings, with no findings.
 
-For every finding, first write the reason: the one fact that decides the verdict, in a few words, like
-"'Membership' = heading 'Become a member'", "the heading says 'Page not found'" or "'here' is in 'sign in to renew a
-book here'". Don't restate the link or the question. Then give the verdict:
-- pass: there is no problem.
-- fail: what the tools returned shows the problem the skill checks for.
-- unsure: what the tools returned is not enough to decide. If you can't check something, the answer is unsure,
-  never fail.
-Only fail what breaks the skill's rule, not what could merely be better.
+For every finding, give the verdict, and a reason for a fail or an unsure:
+- pass: there is no problem. Leave the reason empty.
+- fail: what the tools returned shows the problem the skill checks for. The reason is the one fact that shows it,
+  in a few words, like "the heading says 'Page not found'".
+- unsure: what the tools returned is not enough to decide. The reason says what is missing. If you can't check
+  something, the answer is unsure, never fail.
+Don't restate the link or the question in a reason. Only fail what breaks the skill's rule, not what could merely be
+better.
 
 For every fail, also give:
 - impact, how much it hurts the site's visitors: critical, serious, moderate or minor, as the skill's "Impact" says;

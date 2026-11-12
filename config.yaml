@@ -66,6 +66,8 @@ fleet:
   pages_per_call: 10
   tasks_per_call: 10
   batch_size: 20
+  max_output_tokens: 600
+  timeout_s: 300
   page_text_words: 150
   section_words: 15
   part_words: 30

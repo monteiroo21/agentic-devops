@@ -45,6 +45,7 @@ class Toolkit:
         self.total = 0  # the (item, skill) pairs on the page, the ones answered on earlier pages included
         self.run = None
         self.batch = []  # the ids of the items the current run checks
+        self.keep = None  # keeps the current run's findings: returns how many it kept, and the refused ones with why
 
     @property
     def content(self):
@@ -86,8 +87,12 @@ class Toolkit:
     def left_out(self):
         return len([item_id for item_id in self.order if item_id not in self.needs])
 
-    def start(self, run, batch):
-        self.run, self.batch = run, batch
+    def start(self, run, batch, keep):
+        self.run, self.batch, self.keep = run, batch, keep
+
+    def uncalled(self):
+        # the tools that list the items, which the run hasn't called yet
+        return [tool for tool in self.listing if not self.run.tool_calls[tool]]
 
     def task_text(self):
         return ""  # what the task tells the agent besides the page, like the items it carries
@@ -112,7 +117,34 @@ class Toolkit:
         return None  # why a finding on an item it was given isn't accepted, if it isn't
 
     def tools(self):
-        raise NotImplementedError
+        raise NotImplementedError  # the tools its agent's file lists
+
+    def record_tool(self, findings_type):
+        # record_findings, which every agent has besides the tools its file lists, like submit_findings. It takes the
+        # findings the agent's submission takes
+        def record_findings(findings: findings_type):  # pyright: ignore[reportInvalidTypeForm]
+            """Records findings as you go, a few items at a time, as soon as you have judged them. An item and skill
+            that already has a finding keeps it. Returns how many findings it recorded, the ones it refused with why,
+            which you can give again fixed, and the items still without a finding (unanswered), each with the skills
+            it still needs. When nothing is unanswered, call submit_findings.
+
+            Args:
+                findings: The findings to record, each for an item and a skill that the tools listed.
+            """
+            uncalled = self.uncalled()
+            if uncalled:
+                return {"error": f"call {' and '.join(uncalled)} with {self.run.url} first: it lists the items to "
+                                 "check"}
+            self.run.tool_calls["record_findings"] += 1
+            kept, refused = self.keep(findings)
+            unanswered = {}
+            for item_id, skill in self.run.unanswered():
+                unanswered.setdefault(item_id, []).append(skill)
+            return filled({"recorded": kept,
+                           "refused": [{"id": item_id, "skill": skill, "why": why}
+                                       for (item_id, skill), why in refused] or None,
+                           "unanswered": unanswered})
+        return Tool(record_findings)
 
 class LinkTools(Toolkit):
     tools_given = ("list_links", "get_link_context", "get_destination_summary")

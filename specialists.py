@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from agent import run_agent_async
 from analyzers.accessibility import AccessibilityAnalyzer
 from analyzers.links import LinkAnalyzer
@@ -30,14 +30,18 @@ class RatedVerdict(Verdict):
 class AgentFinding(BaseModel):
     item_id: str = Field(description="The item's id, exactly as the tools returned it.")
     skill: str = Field(description="The skill this finding is for, as named under Skills.")
-    reason: str = Field(description="What decides the verdict, in a few words.")
+    reason: str = Field("", description="For a fail or an unsure: what decides it, in a few words. A pass can leave "
+                                        "it empty.")
     verdict: Literal["pass", "fail", "unsure"]
 
     def answer(self, element):
         return Verdict(id=element, reason=self.reason, verdict=self.verdict)
 
     def problem(self):
-        return None  # why the finding can't be kept as it is, if it can't
+        # why the finding can't be kept as it is, if it can't
+        if self.verdict != "pass" and not self.reason.strip():
+            return f"{'a fail' if self.verdict == 'fail' else 'an unsure'} needs its reason"
+        return None
 
 class RatedAgentFinding(AgentFinding):
     impact: Impact | None = Field(  # pyright: ignore[reportInvalidTypeForm]
@@ -51,18 +55,25 @@ class RatedAgentFinding(AgentFinding):
                             suggested_fix=(self.suggested_fix or None) if failed else None)
 
     def problem(self):
-        if self.verdict == "fail" and self.impact is None:
+        problem = super().problem()
+        if problem is None and self.verdict == "fail" and self.impact is None:
             return "a fail needs its impact"
-        return None
+        return problem
 
+# The findings are recorded with record_findings as the agent goes, so the submission only ends the run: findings given
+# here are recorded the same way first. Extra fields are refused, so that a reply that writes a tool call out as JSON
+# isn't taken for an empty submission
 class SubmitFindings(BaseModel):
-    """Hand in your findings: one for every item and skill the tools listed."""
-    findings: list[AgentFinding]
+    """Finish the task, once record_findings has recorded a finding for every item and skill the tools listed. Any
+    findings given here are recorded first."""
+    model_config = ConfigDict(extra="forbid")
+    findings: list[AgentFinding] = []
 
 class SubmitRatedFindings(BaseModel):
-    """Hand in your findings: one for every item and skill the tools listed, with the impact and a fix for each
-    fail."""
-    findings: list[RatedAgentFinding]
+    """Finish the task, once record_findings has recorded a finding for every item and skill the tools listed, with
+    the impact and a fix for each fail. Any findings given here are recorded first."""
+    model_config = ConfigDict(extra="forbid")
+    findings: list[RatedAgentFinding] = []
 
 ANSWERS = {"findings": SubmitFindings, "rated-findings": SubmitRatedFindings}  # what an agent's file can name
 
@@ -118,7 +129,7 @@ class AgentFile:
     name: str  # like link-agent
     description: str  # what it does, in the orchestrator's list of agents
     skills: dict  # by name: its SkillFiles, in its file's order
-    tools: tuple[str, ...]  # its tools' names, besides submit_findings
+    tools: tuple[str, ...]  # its tools' names, besides record_findings and submit_findings, which every agent has
     max_steps: int  # its model calls in a run
     answer: str  # what it hands in, one of ANSWERS
     prompt: str  # its system prompt, with {skills} where the skills of a task go
@@ -127,6 +138,11 @@ class AgentFile:
     @property
     def submission(self):
         return ANSWERS[self.answer]
+
+    @property
+    def findings_type(self):
+        # what record_findings takes, the same findings as its submission
+        return self.submission.model_fields["findings"].annotation
 
     def system_prompt(self, skills):
         return self.prompt.replace("{skills}", "\n\n".join(skill.section() for skill in skills))
@@ -158,8 +174,8 @@ def load_agent(path, skills_folder):
         problems.append(f"answer must be one of {', '.join(ANSWERS)}")
     if not isinstance(front["max_steps"], int) or front["max_steps"] < 2:
         problems.append("max_steps must be a number, at least 2: a tool call and the submission")
-    problems += [f"its prompt doesn't mention {word}" for word in ("{skills}", *tools, "submit_findings")
-                 if word not in prompt]
+    problems += [f"its prompt doesn't mention {word}"
+                 for word in ("{skills}", *tools, "record_findings", "submit_findings") if word not in prompt]
     if problems:
         raise ValueError(f"{path}: " + "; ".join(problems))
     return AgentFile(path.stem, name, " ".join(front["description"].split()), skills, tools, front["max_steps"],
@@ -189,10 +205,11 @@ AGENT_OF = {skill: agent for agent in AGENTS.values() for skill in agent.skills}
 
 def page_args(check, url, model, no_think, max_output_tokens, site_pages=()):
     # what a page's analyzer and its agents run with. site_pages: the site's pages that are checked on their own, so
-    # one the browser lands on isn't judged twice. The link agent reads the linked pages itself
+    # one the browser lands on isn't judged twice. The link agent reads the linked pages itself. timeout_s is the
+    # agents' own, shorter than the analyzers'
     return Namespace(url=url, analyzer=CHECKS[check].name, backend="ollama", model=model, no_think=no_think,
-                     max_output_tokens=max_output_tokens, output=None, checked_elsewhere=set(site_pages),
-                     read_linked_pages=False)
+                     max_output_tokens=max_output_tokens, timeout_s=FLEET.timeout_s, output=None,
+                     checked_elsewhere=set(site_pages), read_linked_pages=False)
 
 class PageWork:
     def __init__(self, args_for, memory=None):
@@ -267,41 +284,47 @@ def task_prompt(run, toolkit):
         if run.batch else ""
     return f"Task {run.task}: check the page {run.url}.{part}{toolkit.task_text()}"
 
-async def run_batch(agent, work, skills, toolkit, run, batch):
-    toolkit.start(run, batch)
-    run.expected = [(item_id, skill) for item_id in batch for skill in toolkit.needs[item_id]]
+def keep_findings(run, work, toolkit, findings):
+    # keeps the findings that answer a pair the run was given and has no answer for yet, unless they are refused.
+    # Returns how many it kept, and the ones it refused, each as (pair, why)
     expected = set(run.expected)
+    kept, refused = 0, []
+    for entry in findings:
+        pair = (entry.item_id, entry.skill)
+        if pair not in expected:
+            if element_id(*pair) not in work.questions.elements:
+                run.invented += 1  # an item answered before, shown again for its page's outline, isn't
+        elif pair not in run.answers:
+            why = entry.problem() or toolkit.refused(entry)
+            if why:
+                run.refused[pair] = why
+                run.refusals += 1
+                refused.append((pair, why))
+            else:
+                run.answers[pair] = entry.answer(element_id(*pair))
+                run.refused.pop(pair, None)
+                kept += 1
+    return kept, refused
 
-    def calls_missing():
-        return [tool for tool in toolkit.listing if not run.tool_calls[tool]]
+async def run_batch(agent, work, skills, toolkit, run, batch):
+    toolkit.start(run, batch, lambda findings: keep_findings(run, work, toolkit, findings))
+    run.expected = [(item_id, skill) for item_id in batch for skill in toolkit.needs[item_id]]
 
     def review(submitted):
-        # keeps every accepted answer, from this submission and the earlier ones, and returns the pairs still without one
-        if calls_missing():
+        # keeps the accepted answers this submission adds to the recorded ones, and returns the pairs still without one
+        if toolkit.uncalled():
             return ["no tool call"]
-        for entry in submitted.findings:
-            pair = (entry.item_id, entry.skill)
-            if pair not in expected:
-                if element_id(*pair) not in work.questions.elements:
-                    run.invented += 1  # an item answered before, shown again for its page's outline, isn't
-            elif pair not in run.answers:
-                why = entry.problem() or toolkit.refused(entry)
-                if why:
-                    run.refused[pair] = why
-                    run.refusals += 1
-                else:
-                    run.answers[pair] = entry.answer(element_id(*pair))
-                    run.refused.pop(pair, None)
+        keep_findings(run, work, toolkit, submitted.findings)
         missing = run.unanswered()
         if run.first_missing is None:
             run.first_missing = missing
         return missing
 
     def reject(missing):
-        uncalled = calls_missing()
+        uncalled = toolkit.uncalled()
         if uncalled:
             return (f"Not accepted: you haven't called {' and '.join(uncalled)} yet. Call it with {run.url}, check "
-                    "every item it lists, then call submit_findings again.")
+                    "every item it lists, record your findings with record_findings, then call submit_findings.")
         unanswered = {}
         for item_id, skill in missing:
             if (item_id, skill) not in run.refused:
@@ -315,14 +338,14 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
                          + ".")
         if refused:
             parts.append("These findings weren't accepted:\n" + "\n".join(refused) + "\n")
-        parts.append("The findings you gave for the others are kept. Call submit_findings again, with findings for "
-                     "only these.")
+        parts.append("The findings you gave for the others are kept. Record these with record_findings, then call "
+                     "submit_findings.")
         return " ".join(parts)
 
     submitted, usage = await run_agent_async(
-        work.analyzers["links"].args, agent.system_prompt(skills), task_prompt(run, toolkit), toolkit.tools(),
-        agent.submission, review, reject, request_limit=agent.max_steps, output_name="submit_findings",
-        text_submission=True)
+        work.analyzers["links"].args, agent.system_prompt(skills), task_prompt(run, toolkit),
+        toolkit.tools() + [toolkit.record_tool(agent.findings_type)], agent.submission, review, reject,
+        request_limit=agent.max_steps, output_name="submit_findings", text_submission=True)
     run.usage = usage
     if submitted is None:
         run.error = "it stopped before it handed in all its findings"
@@ -394,9 +417,9 @@ def main():
                         help=f"the agent's Ollama model (default {CONFIG.models.ollama})")
     parser.add_argument("--no-think", action="store_true",
                         help="the agent answers without thinking first, which is much faster on a CPU")
-    parser.add_argument("--max-output-tokens", type=int, default=CONFIG.ollama.max_output_tokens,
+    parser.add_argument("--max-output-tokens", type=int, default=FLEET.max_output_tokens,
                         help="the most tokens the agent may write per turn, thinking included "
-                             f"(default {CONFIG.ollama.max_output_tokens})")
+                             f"(default {FLEET.max_output_tokens})")
     args = parser.parse_args()
     if urlsplit(args.url).scheme not in ("http", "https") or not urlsplit(args.url).hostname:
         parser.error(f"the URL must start with http:// or https://, got {args.url!r}")

@@ -1,6 +1,8 @@
+import os
 from dataclasses import dataclass
 
 from google.genai.types import HttpRetryOptions
+from openai import AsyncOpenAI
 from pydantic_ai import TextPart, ThinkingPart, ToolCallPart
 from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from pydantic_ai.models.ollama import OllamaModel
@@ -20,13 +22,17 @@ class Turn:
 def make_model(backend, name, think, max_output_tokens, ollama_url, thinking_level, retry_attempts=None,
                ollama_timeout_s=None):
     if backend == "ollama":
-        # a long reply on a CPU can outlast the client's default timeout of 600 s, which drops it and asks again
+        # a long reply on a CPU can outlast the client's default timeout of 600 s, so the caller sets its own
         settings = OpenAIChatModelSettings(max_tokens=max_output_tokens)
         if ollama_timeout_s:
             settings["timeout"] = ollama_timeout_s
         if not think:
             settings["openai_reasoning_effort"] = "none"
-        return OllamaModel(name, provider=OllamaProvider(base_url=ollama_url)), settings
+        # the OpenAI client sends a request again, up to twice, when it times out or fails, and pydantic-ai keeps its
+        # default. A request that timed out would only time out again on this CPU, so it fails at once instead
+        client = AsyncOpenAI(base_url=ollama_url, api_key=os.getenv("OLLAMA_API_KEY") or "api-key-not-set",
+                             max_retries=0)
+        return OllamaModel(name, provider=OllamaProvider(openai_client=client)), settings
     # enough tries to wait out a per-minute limit, like the input tokens per minute
     provider = GoogleProvider(retry_options=HttpRetryOptions(attempts=retry_attempts))
     settings = GoogleModelSettings(google_thinking_config={"include_thoughts": True, "thinking_level": thinking_level})

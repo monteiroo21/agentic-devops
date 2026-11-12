@@ -37,7 +37,7 @@ class GeminiConfig(Section):
 class OllamaConfig(Section):
     url: str
     max_output_tokens: int
-    timeout_s: float  # how long a request may take before it is dropped and asked again
+    timeout_s: float  # how long a request may take before it is dropped, unless its arguments carry a timeout_s
 
 class AgentConfig(Section):
     max_rejections: int
@@ -98,6 +98,8 @@ class FleetConfig(Section):
     pages_per_call: int  # the most pages run_static_check takes at once
     tasks_per_call: int  # the most tasks delegate takes at once
     batch_size: int  # the most links, images or axe-core items one agent run checks; a task with more has more runs
+    max_output_tokens: int  # --max-output-tokens' default: the most tokens an agent may write per turn, thinking included
+    timeout_s: float  # how long an agent's request may take before it is dropped; the run then fails, it isn't resent
     page_text_words: int  # how many words of the page's text get_text_sample returns per call
     section_words: int  # how many words of the text under each heading get_headings returns
     part_words: int  # how many words of each passage with a lang of its own get_page_meta returns
@@ -187,10 +189,12 @@ def model_name(args):
     return args.model or getattr(CONFIG.models, args.backend)
 
 def model_and_settings(args):
+    # the fleet's agents carry a timeout of their own, shorter than the analyzers'
+    timeout_s = getattr(args, "timeout_s", None) or CONFIG.ollama.timeout_s
     return make_model(args.backend, model_name(args), think=not args.no_think,
                       max_output_tokens=args.max_output_tokens, ollama_url=CONFIG.ollama.url,
                       thinking_level=CONFIG.gemini.thinking_level, retry_attempts=CONFIG.gemini.retry_attempts,
-                      ollama_timeout_s=CONFIG.ollama.timeout_s)
+                      ollama_timeout_s=timeout_s)
 
 # Reports
 
