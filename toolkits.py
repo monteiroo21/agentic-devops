@@ -116,6 +116,9 @@ class Toolkit:
     def refused(self, entry):
         return None  # why a finding on an item it was given isn't accepted, if it isn't
 
+    def needless_after_fail(self, skill):
+        return ()  # the skills an item needs no answer for once it fails this one
+
     def tools(self):
         raise NotImplementedError  # the tools its agent's file lists
 
@@ -231,24 +234,38 @@ class LinkTools(Toolkit):
             context["note"] = "it has no title, no text around it and no heading"
         return context
 
-    def destination(self, item_id):
-        link = self.links[item_id]
-        check = link["check"]
-        said = {"text": link["text"], "url": link["url"]}
-        if check is None or not leads_to_page({"tag": "a", "check": check}):
-            return {**said, "error": "it doesn't lead to a web page that works"}
-        if item_id not in self.read:
-            self.read.add(item_id)
-            self.run.read.append(item_id)
-        if check["final_url"] and check["final_url"] != link["url"]:
-            said["final_url"] = check["final_url"]
-        return {**said, **filled({key: check[key] for key in ("status", "title", "heading", "words", "word_count")})}
+    def destinations(self, ids):
+        # each page these links lead to once, by the URL they ended on, with the ids and texts of the links to it
+        pages, errors = {}, []
+        for item_id in dict.fromkeys(ids):
+            if item_id not in self.batch:
+                errors.append({"id": item_id, "error": "no item with this id was listed"})
+                continue
+            link = self.links[item_id]
+            check = link["check"]
+            if check is None or not leads_to_page({"tag": "a", "check": check}):
+                errors.append({"id": item_id, "text": link["text"], "error": "it doesn't lead to a web page that works"})
+                continue
+            if item_id not in self.read:
+                self.read.add(item_id)
+                self.run.read.append(item_id)
+            page = pages.setdefault(check["final_url"], {
+                "url": check["final_url"],
+                **filled({key: check[key] for key in ("status", "title", "heading", "words", "word_count")}),
+                "links": []})
+            page["links"].append({"id": item_id, "text": link["text"]})
+        return filled({"pages": list(pages.values()) or None, "errors": errors or None})
 
     def refused(self, entry):
         if entry.skill in ("soft-404", "text-mismatch") and entry.verdict != "unsure" and entry.item_id not in self.read:
             return ("you haven't read the page it leads to: read it with get_destination_summary, or answer "
                     "unsure")
         return None
+
+    def needless_after_fail(self, skill):
+        # a link to an error page isn't judged as a redirect or for its text, nor one whose redirect fails for its text.
+        # fleet.py's LINK_SKILL_ORDER leaves these out of the report the same way, across pages
+        return {"soft-404": ("redirect", "text-mismatch"), "redirect": ("text-mismatch",)}.get(skill, ())
 
     def tools(self):
         def list_links(url: str):
@@ -277,14 +294,16 @@ class LinkTools(Toolkit):
             return {"links": self.looked_up(ids, "get_link_context", self.context)}
 
         def get_destination_summary(ids: list[str]):
-            """Reads the pages that the links with these ids lead to, as list_links listed them: each link's text, URL
-            and the URL it ended on again, then its page's status, title, first heading, first words (words) and how
-            many words its main text has (word_count).
+            """Reads the pages that the links with these ids lead to, as list_links listed them. Returns each page
+            once, however many of the links lead to it: the URL the links ended on, its status, title, first heading,
+            first words (words) and how many words its main text has (word_count), and the ids and texts of the links
+            that lead to it.
 
             Args:
                 ids: The ids of the links, like link-3.
             """
-            return {"destinations": self.looked_up(ids, "get_destination_summary", self.destination)}
+            self.run.tool_calls["get_destination_summary"] += 1
+            return self.destinations(ids)
 
         return [Tool(list_links), Tool(get_link_context), Tool(get_destination_summary)]
 

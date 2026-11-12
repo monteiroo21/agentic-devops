@@ -47,7 +47,7 @@ links:
   max_page_bytes: 524288
   max_page_text_chars: 2000
   workflow_page_text_chars: 600
-  summary_words: 50
+  summary_words: 25
 
 orchestrator:
   prompts: prompts/orchestrator
@@ -65,7 +65,7 @@ fleet:
   max_requests: 150
   pages_per_call: 10
   tasks_per_call: 10
-  batch_size: 20
+  batch_size: 10
   max_output_tokens: 600
   timeout_s: 300
   page_text_words: 150

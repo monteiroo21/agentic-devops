@@ -7,6 +7,8 @@ wcag: null
 tools: [list_links, get_destination_summary]
 ---
 
+Judge soft-404 before a link's other skills. A link that fails it needs no redirect or text-mismatch answer.
+
 ### When to look closer
 
 A link's text and URL don't show whether the page behind it is an error page: only that page's title, heading and

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field
-from agent import run_agent_async
+from agent import SkillTools, run_agent_async
 from analyzers.accessibility import AccessibilityAnalyzer
 from analyzers.links import LinkAnalyzer
 from common import CONFIG, Impact, Verdict, read_skill, trace_to_logfire
@@ -92,15 +92,9 @@ class SkillFile:
         # as axe-core names the criteria, like wcag244, which is how the report keeps them
         return ["wcag" + number.replace(".", "") for number in self.wcag]
 
-    def section(self):
-        # what the agent's prompt shows of it, where {skills} is: its instructions, then its examples
-        _, body = read_skill(self.path)
+    def line(self):
         about = f" (WCAG {', '.join(self.wcag)})" if self.wcag else ""
-        section = f"## {self.name}{about}\n\n{self.description}\n\n{body}"
-        examples = self.path.parent / "references" / "examples.md"
-        if examples.exists():
-            section += "\n\n### Examples\n\n" + examples.read_text().strip()
-        return section
+        return f"- {self.name}{about}: {self.description}"
 
 def load_skill(path):
     front, _ = read_skill(path)
@@ -129,7 +123,7 @@ class AgentFile:
     name: str  # like link-agent
     description: str  # what it does, in the orchestrator's list of agents
     skills: dict  # by name: its SkillFiles, in its file's order
-    tools: tuple[str, ...]  # its tools' names, besides record_findings and submit_findings, which every agent has
+    tools: tuple[str, ...]  # its tools' names, besides the ones every agent has: load_skill, read_skill_file,
     max_steps: int  # its model calls in a run
     answer: str  # what it hands in, one of ANSWERS
     prompt: str  # its system prompt, with {skills} where the skills of a task go
@@ -145,7 +139,7 @@ class AgentFile:
         return self.submission.model_fields["findings"].annotation
 
     def system_prompt(self, skills):
-        return self.prompt.replace("{skills}", "\n\n".join(skill.section() for skill in skills))
+        return self.prompt.replace("{skills}", "\n".join(skill.line() for skill in skills))
 
 def load_agent(path, skills_folder):
     front, prompt = read_skill(path)
@@ -175,7 +169,8 @@ def load_agent(path, skills_folder):
     if not isinstance(front["max_steps"], int) or front["max_steps"] < 2:
         problems.append("max_steps must be a number, at least 2: a tool call and the submission")
     problems += [f"its prompt doesn't mention {word}"
-                 for word in ("{skills}", *tools, "record_findings", "submit_findings") if word not in prompt]
+                 for word in ("{skills}", *tools, "load_skill", "record_findings", "submit_findings")
+                 if word not in prompt]
     if problems:
         raise ValueError(f"{path}: " + "; ".join(problems))
     return AgentFile(path.stem, name, " ".join(front["description"].split()), skills, tools, front["max_steps"],
@@ -242,6 +237,7 @@ class Run:
     lands_on: str | None = None
     error: str | None = None
     expected: list[tuple[str, str]] = field(default_factory=list)  # the (item id, skill) pairs it was given
+    dropped: list[tuple[str, str]] = field(default_factory=list)  # pairs taken out of expected, made needless by a fail
     known: int = 0  # pairs left out of what it was given, since they were answered before
     answers: dict = field(default_factory=dict)  # by (item id, skill)
     first_missing: list | None = None  # the pairs its first submission had no accepted answer for
@@ -250,6 +246,8 @@ class Run:
     invented: int = 0  # answers for ids or skills its tools never showed
     tool_calls: Counter = field(default_factory=Counter)  # by tool
     read: list[str] = field(default_factory=list)  # the items whose linked page it read
+    skills_loaded: list[str] = field(default_factory=list)  # with load_skill, in the order it first loaded them
+    skill_files_read: list[str] = field(default_factory=list)  # with read_skill_file, as skill/path
     findings: list[dict] = field(default_factory=list)  # its accepted answers, with what the code adds to them
     usage: Counter = field(default_factory=Counter)
     collect_s: float = 0.0  # the time the page's tools took, if this run was the first to need them
@@ -263,9 +261,10 @@ class Run:
             "status": self.status, "lands_on": self.lands_on, "error": self.error, "items": len(self.expected),
             "known": self.known, "answered": sum(pair in self.answers for pair in self.expected),
             "unanswered": [f"{item_id} {skill}" for item_id, skill in self.unanswered()],
+            "dropped": [f"{item_id} {skill}" for item_id, skill in self.dropped],
             "omitted_first": len(self.first_missing or []), "refusals": self.refusals, "invented": self.invented,
-            "tool_calls": dict(self.tool_calls), "destinations_read": self.read,
-            **{key: self.usage[key] for key in USAGE},
+            "tool_calls": dict(self.tool_calls), "destinations_read": self.read, "skills_loaded": self.skills_loaded,
+            "skill_files_read": self.skill_files_read, **{key: self.usage[key] for key in USAGE},
             "model_s": round(self.usage["model_s"], 1), "collect_s": round(self.collect_s, 1),
             "findings": self.findings,
         }
@@ -295,7 +294,8 @@ def keep_findings(run, work, toolkit, findings):
             if element_id(*pair) not in work.questions.elements:
                 run.invented += 1  # an item answered before, shown again for its page's outline, isn't
         elif pair not in run.answers:
-            why = entry.problem() or toolkit.refused(entry)
+            why = (f"load the {entry.skill} skill with load_skill first" if entry.skill not in run.skills_loaded
+                   else entry.problem() or toolkit.refused(entry))
             if why:
                 run.refused[pair] = why
                 run.refusals += 1
@@ -304,11 +304,23 @@ def keep_findings(run, work, toolkit, findings):
                 run.answers[pair] = entry.answer(element_id(*pair))
                 run.refused.pop(pair, None)
                 kept += 1
+                if entry.verdict == "fail":
+                    # a fail can make the item's other skills needless, like a link's redirect after its soft-404.
+                    # One already answered keeps its answer
+                    for skill in toolkit.needless_after_fail(entry.skill):
+                        later = (entry.item_id, skill)
+                        if later in expected and later not in run.answers:
+                            expected.discard(later)
+                            run.expected.remove(later)
+                            run.refused.pop(later, None)
+                            run.dropped.append(later)
     return kept, refused
 
 async def run_batch(agent, work, skills, toolkit, run, batch):
     toolkit.start(run, batch, lambda findings: keep_findings(run, work, toolkit, findings))
     run.expected = [(item_id, skill) for item_id in batch for skill in toolkit.needs[item_id]]
+    skill_tools = SkillTools({skill.name: skill for skill in skills})
+    run.skills_loaded, run.skill_files_read = skill_tools.loaded, skill_tools.files_read
 
     def review(submitted):
         # keeps the accepted answers this submission adds to the recorded ones, and returns the pairs still without one
@@ -344,7 +356,8 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
 
     submitted, usage = await run_agent_async(
         work.analyzers["links"].args, agent.system_prompt(skills), task_prompt(run, toolkit),
-        toolkit.tools() + [toolkit.record_tool(agent.findings_type)], agent.submission, review, reject,
+        toolkit.tools() + skill_tools.tools() + [toolkit.record_tool(agent.findings_type)], agent.submission, review,
+        reject,
         request_limit=agent.max_steps, output_name="submit_findings", text_submission=True)
     run.usage = usage
     if submitted is None:
