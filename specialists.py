@@ -373,7 +373,6 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
     questions.answers.by_id.update({element_id(*pair): answer for pair, answer in run.answers.items()})
     questions.answers.omitted.update(element_id(*pair)
                                      for pair in (run.first_missing if run.first_missing is not None else run.expected))
-    questions.record()
 
 async def run_task(agent, work, skill_names, task_id):
     skills = [agent.skills[name] for name in skill_names]
@@ -407,6 +406,8 @@ async def run_task(agent, work, skill_names, task_id):
               + f": {len(batch)} item(s)=====")
         await run_batch(agent, work, skills, toolkit, run, batch)
         runs.append(run)
+    work.questions.forget({element_id(*pair) for run in runs for pair in run.dropped})
+    work.questions.record()
     return runs
 
 def task_status(runs):

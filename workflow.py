@@ -236,6 +236,12 @@ class Questions:
             self.memory.record(self.page, criterion, skill, instructions, entries, self.answers.by_id, batched)
         self.unrecorded = []
 
+    def forget(self, element_ids):
+        # elements that turned out to need no answer, like a fleet agent's link skills made needless by a fail: the
+        # memory doesn't keep them as items still to answer
+        self.unrecorded = [(criterion, skill, instructions, [entry for entry in entries if entry[0] not in element_ids],
+                            batched) for criterion, skill, instructions, entries, batched in self.unrecorded]
+
 async def run_workflows(analyzers, judge, memory=None):
     # each page through its analyzer: its tools, then the model's answers, with the pages' questions asked together.
     # A page's report is None if there was nothing to judge on it. When pages share requests, each report counts

@@ -11,6 +11,7 @@ from tools.styles import computed_styles
 FLEET = CONFIG.fleet
 ACCESSIBILITY = CONFIG.accessibility
 WEB = ("http", "https")
+NEEDLESS_AFTER_FAIL = {"soft-404": ("redirect", "text-mismatch"), "redirect": ("text-mismatch",)}
 
 def element_id(item_id, skill):
     return f"{skill}:{item_id}"
@@ -201,8 +202,8 @@ class LinkTools(Toolkit):
                     mismatches.append((item_id, {"url": url, "text": link["text"]},
                                        {"url": url, "links": [url], "rule": "text-mismatch"}))
         self.ask("soft-404", soft_404s)
-        self.ask("redirect", redirects)
-        self.ask("text-mismatch", mismatches)
+        self.ask("redirect", [entry for entry in redirects if not self.known_needless(entry[0], "redirect")])
+        self.ask("text-mismatch", [entry for entry in mismatches if not self.known_needless(entry[0], "text-mismatch")])
         self.ask("link-purpose", purpose)
 
     def row(self, item_id):
@@ -263,9 +264,12 @@ class LinkTools(Toolkit):
         return None
 
     def needless_after_fail(self, skill):
-        # a link to an error page isn't judged as a redirect or for its text, nor one whose redirect fails for its text.
-        # fleet.py's LINK_SKILL_ORDER leaves these out of the report the same way, across pages
-        return {"soft-404": ("redirect", "text-mismatch"), "redirect": ("text-mismatch",)}.get(skill, ())
+        return NEEDLESS_AFTER_FAIL.get(skill, ())
+
+    def known_needless(self, item_id, skill):
+        by_id = self.work.questions.answers.by_id
+        return any(skill in later and getattr(by_id.get(element_id(item_id, earlier)), "verdict", None) == "fail"
+                   for earlier, later in NEEDLESS_AFTER_FAIL.items())
 
     def tools(self):
         def list_links(url: str):

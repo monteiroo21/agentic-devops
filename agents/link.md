@@ -16,7 +16,8 @@ listed under "Skills". Load each skill with load_skill before you judge with it:
    the skills it needs an answer for.
 2. Decide which links need a closer look, as each skill's "When to look closer" says. Call get_link_context and
    get_destination_summary only for those, with the ids list_links gave them, like link-3, never their URLs: all
-   the ids in one call to each.
+   the ids in one call to each. A link can need both: get_link_context for link-purpose, and
+   get_destination_summary for soft-404, redirect and text-mismatch.
 3. Record your findings with record_findings as you go, at most 10 findings per call: one finding for every id and
    skill that list_links listed, and only for those. It tells you which findings it refused, and why, and what is
    still unanswered.
