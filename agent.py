@@ -12,19 +12,21 @@ from chat_backends import read_response
 from common import (CONFIG, make_parser, model_and_settings, model_name, parse_args, report_fields, report_path,
                     skill_files, skill_instructions, skills_prompt, trace_to_logfire)
 
-# The model calls the tools itself and submits one report
+EXAMPLES = "references/examples.md"
 
 class SkillTools:
-    def __init__(self, skills, load_once=False):
+    def __init__(self, skills, load_once=False, with_examples=False):
         self.skills = skills
         self.loaded = []  # in the order the model first loaded them
         self.files_read = []  # as skill/path
-        # a skill loaded again returns a note, not its instructions again: a fleet agent reloaded every skill after a
-        # refusal, which only made its conversation longer
         self.load_once = load_once
+        self.with_examples = with_examples
 
     def no_skill(self, name):
         return {"error": f"there is no skill named {name!r}; the skills are {', '.join(self.skills)}"}
+
+    def files(self, skill):
+        return [path for path in skill_files(skill) if not (self.with_examples and path == EXAMPLES)]
 
     def load_skill(self, name: str):
         """Loads a skill's instructions, which say how to judge what the skill is for, with the files that come with
@@ -40,8 +42,11 @@ class SkillTools:
             return {"name": name, "note": "already loaded: its instructions are earlier in this conversation"}
         if name not in self.loaded:
             self.loaded.append(name)
-        files = skill_files(skill)
-        return {"name": name, "instructions": skill_instructions(skill), **({"files": files} if files else {})}
+        examples = skill.path.parent / EXAMPLES
+        files = self.files(skill)
+        return {"name": name, "instructions": skill_instructions(skill),
+                **({"examples": examples.read_text().strip()} if self.with_examples and examples.exists() else {}),
+                **({"files": files} if files else {})}
 
     def read_skill_file(self, skill: str, path: str):
         """Reads one of the files that come with a skill, like its worked examples.
@@ -53,7 +58,7 @@ class SkillTools:
         found = self.skills.get(skill)
         if found is None:
             return self.no_skill(skill)
-        files = skill_files(found)
+        files = self.files(found)
         if path not in files:
             return {"error": f"the {skill} skill has no file {path!r}; its files are {', '.join(files) or 'none'}"}
         if f"{skill}/{path}" not in self.files_read:
@@ -61,7 +66,14 @@ class SkillTools:
         return {"skill": skill, "path": path, "content": (found.path.parent / path).read_text()}
 
     def tools(self):
-        return [Tool(self.load_skill), Tool(self.read_skill_file)]
+        if not self.with_examples:
+            return [Tool(self.load_skill), Tool(self.read_skill_file)]
+        reads_files = any(self.files(skill) for skill in self.skills.values())
+        description = ("Loads a skill's instructions, which say how to judge what the skill is for, and its worked "
+                       "examples, which show how typical cases are judged."
+                       + (" Its other files, if it has any, are listed under files, and read_skill_file reads them."
+                          if reads_files else ""))
+        return [Tool(self.load_skill, description=description)] + ([Tool(self.read_skill_file)] if reads_files else [])
 
 def printable(value):
     # an image a tool returns, like a screenshot, by its size rather than its bytes
@@ -75,10 +87,6 @@ def run_agent(*args, **kwargs):
 async def run_agent_async(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(),
                           session=None, request_limit=CONFIG.agent.max_requests, process_history=None,
                           output_name="submit_report", text_submission=False):
-    # process_history rewrites the conversation before each model request, like clearing results no longer needed.
-    # Async so that an agent can run inside another agent's tool, like a specialist inside the fleet's orchestrator.
-    # text_submission also takes the submission from a reply that writes it out as JSON instead of calling the submit
-    # tool, as small models sometimes do
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
@@ -86,11 +94,14 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
     usage = Counter()
 
     def from_text(text: str):
-        start, end = text.find("{"), text.rfind("}")
-        try:
-            submitted = submission.model_validate(json.loads(text[start:end + 1]) if 0 <= start < end else None)
-        except ValueError:  # not JSON, or not in the submission's shape
-            raise ModelRetry(f"Hand in your answers by calling {output_name}.")
+        if not submission.model_fields:
+            submitted = submission()
+        else:
+            start, end = text.find("{"), text.rfind("}")
+            try:
+                submitted = submission.model_validate(json.loads(text[start:end + 1]) if 0 <= start < end else None)
+            except ValueError:  # not JSON, or not in the submission's shape
+                raise ModelRetry(f"Hand in your answers by calling {output_name}.")
         usage["text_submissions"] += 1
         print(f"=====Took the submission from {name}'s reply=====")
         return submitted

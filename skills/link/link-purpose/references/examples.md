@@ -16,6 +16,13 @@ get_link_context:
 - {"text": "", "heading": "Follow us"}
   unsure: the link has no text, so it probably holds an image whose alt is its name, and that alt isn't shown here.
 
+Links whose page has a problem:
+
+- {"text": "Annual report", "url": "https://www.citymuseum.example/annual-report", "status": 500}
+  pass: the text names the page. That the page is broken is for another check to report.
+- {"text": "Group visits", "url": "https://www.citymuseum.example/groups", "redirects": 1, "final_url": "https://www.citymuseum.example/login"}
+  pass: the text names the page. Where the link ends up is for another check to judge.
+
 Links with the same text that lead to different URLs:
 
 - {"id": "link-4", "text": "Book now", "url": "https://www.citymuseum.example/tours/roman-city", "heading": "The Roman city"}

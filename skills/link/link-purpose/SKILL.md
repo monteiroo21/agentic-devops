@@ -33,8 +33,10 @@ and fails if they don't.
 A link with no text may hold only an image, and then its name is the image's alt, which isn't part of the link's
 text. Judge it by that alt if you have it, and if you don't, it can't be decided.
 
-Judge only whether a user can tell where the link goes, not whether the topic is explained there, and not whether
-the destination matches the text: that is the text-mismatch skill's job.
+Judge only whether a user can tell where the link goes, from what they can see or hear before following it. Don't
+judge whether the topic is explained there, or what happens after the click: whether the page works, where its
+redirects end and whether it matches the text are other skills' jobs. So a link's status, error, redirects and
+final_url never make it fail here, and its URL only shows which links with the same text lead to different places.
 
 Also look out for links with the same text that lead to different URLs. A user can't see the URLs before following
 the links. They fail if their context and headings don't tell them apart, and pass if each one's context or heading

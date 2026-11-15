@@ -49,16 +49,29 @@ class AgentFinding(BaseModel):
             return 'an unsure needs "reason": what is missing to decide, in a few words'
         return None
 
+    def missing_impact(self):
+        return False  # whether it is a fail kept without the impact it needs, which a later finding can add
+
 class RatedAgentFinding(AgentFinding):
-    # a plain list of values, empty for none: as "one of these or null" qwen treated it as optional and left it out
+    # a plain list of values, empty for none: as "one of these or null" qwen treated it as optional and left it out.
+    # Required, so that the schema qwen reads asks for it: with a default, qwen left it out too. A finding without it
+    # is still taken, so that it isn't refused for it: its fail is kept, and a later finding can add the impact
     impact: Literal[*IMPACTS, ""] = Field(  # pyright: ignore[reportInvalidTypeForm]
-        "", description="Needed for every fail: how much the problem hurts the site's visitors.")
+        description="For a fail: how much the problem hurts the site's visitors, as the skill's Impact says. Empty "
+                    "for an unsure.")
     suggested_fix: str = Field("", description="For a fail: how to fix it, in a few words. Empty if you can't tell.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def impact_given(cls, data):
+        if isinstance(data, dict) and data.get("impact") is None:
+            data = {**data, "impact": ""}  # left out, or null
+        return data
 
     @field_validator("impact", mode="before")
     @classmethod
     def plain_impact(cls, value):
-        return "" if value is None else value.strip().lower() if isinstance(value, str) else value
+        return value.strip().lower() if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def impact_from_text(self):
@@ -79,29 +92,18 @@ class RatedAgentFinding(AgentFinding):
                             impact=(self.impact or None) if failed else None,
                             suggested_fix=(self.suggested_fix or None) if failed else None)
 
-    def problem(self):
-        problem = super().problem()
-        if problem is None and self.verdict == "fail" and not self.impact:
-            return ('a fail needs "impact": one of "critical", "serious", "moderate" or "minor", as the skill\'s Impact '
-                    'says, next to its "reason"')
-        return problem
+    def missing_impact(self):
+        return self.verdict == "fail" and not self.impact
 
-# The findings are recorded with record_findings as the agent goes, so the submission only ends the run: findings given
-# here are recorded the same way first. Extra fields are refused, so that a reply that writes a tool call out as JSON
-# isn't taken for an empty submission
+# The findings are recorded with record_findings, so the submission only ends the run, and takes nothing: when it took
+# findings too, qwen repeated in it the ones it had recorded, and one such repeat ran into the output cap. Extra fields
+# are refused, so that a reply that writes a tool call out as JSON isn't taken for the submission
 class SubmitFindings(BaseModel):
-    """Finish the task, once record_findings has recorded a finding for every item and skill the tools listed. Any
-    findings given here are recorded first."""
+    """Finish the task, once record_findings shows nothing unanswered."""
     model_config = ConfigDict(extra="forbid")
-    findings: list[AgentFinding] = []
 
-class SubmitRatedFindings(BaseModel):
-    """Finish the task, once record_findings has recorded a finding for every item and skill the tools listed, with
-    the impact and a fix for each fail. Any findings given here are recorded first."""
-    model_config = ConfigDict(extra="forbid")
-    findings: list[RatedAgentFinding] = []
-
-ANSWERS = {"findings": SubmitFindings, "rated-findings": SubmitRatedFindings}  # what an agent's file can name
+ANSWERS = {"findings": AgentFinding, "rated-findings": RatedAgentFinding}  # what an agent's file can name: what
+# record_findings takes
 
 @dataclass(frozen=True)
 class SkillFile:
@@ -150,23 +152,21 @@ class AgentFile:
     name: str  # like link-agent
     description: str  # what it does, in the orchestrator's list of agents
     skills: dict  # by name: its SkillFiles, in its file's order
-    tools: tuple[str, ...]  # its tools' names, besides the ones every agent has: load_skill, read_skill_file,
+    tools: tuple[str, ...]  # its tools' names, besides the ones every agent has: load_skill (and read_skill_file for
+    # a skill with files besides its examples), record_findings and submit_findings
     max_steps: int  # its model calls in a run
-    answer: str  # what it hands in, one of ANSWERS
-    prompt: str  # its system prompt, with {skills} where the skills of a task go
+    answer: str  # the findings it records, one of ANSWERS
+    prompt: str  # its system prompt, with {skills} where the skills of a task go, and {passes_example} an example of
+    # passes with them
     toolkit: type  # what gives it its tools
 
     @property
-    def submission(self):
-        return ANSWERS[self.answer]
+    def finding(self):
+        return ANSWERS[self.answer]  # what record_findings takes
 
-    @property
-    def findings_type(self):
-        # what record_findings takes, the same findings as its submission
-        return self.submission.model_fields["findings"].annotation
-
-    def system_prompt(self, skills):
-        return self.prompt.replace("{skills}", "\n".join(skill.line() for skill in skills))
+    def system_prompt(self, skills, passes_example):
+        return (self.prompt.replace("{skills}", "\n".join(skill.line() for skill in skills))
+                .replace("{passes_example}", passes_example))
 
 def load_agent(path, skills_folder):
     front, prompt = read_skill(path)
@@ -196,8 +196,15 @@ def load_agent(path, skills_folder):
     if not isinstance(front["max_steps"], int) or front["max_steps"] < 2:
         problems.append("max_steps must be a number, at least 2: a tool call and the submission")
     problems += [f"its prompt doesn't mention {word}"
-                 for word in ("{skills}", *tools, "load_skill", "record_findings", "submit_findings")
+                 for word in ("{skills}", "{passes_example}", "load_skill", "record_findings", "submit_findings")
                  if word not in prompt]
+    unused = [tool for tool in tools if not any(tool in skill.tools for skill in skills.values())]
+    if unused:
+        problems.append(f"none of its skills lists {', '.join(unused)}, so no task would be offered it")
+    partial = [tool for tool in tools if tool in prompt and not all(tool in skill.tools for skill in skills.values())]
+    if partial:
+        problems.append(f"its prompt names {', '.join(partial)}, which only some of its skills list: name it in their "
+                        "instructions instead")
     if problems:
         raise ValueError(f"{path}: " + "; ".join(problems))
     return AgentFile(path.stem, name, " ".join(front["description"].split()), skills, tools, front["max_steps"],
@@ -269,6 +276,8 @@ class Run:
     answers: dict = field(default_factory=dict)  # by (item id, skill)
     first_missing: list | None = None  # the pairs its first submission had no accepted answer for
     refused: dict = field(default_factory=dict)  # by pair: why its latest answer wasn't accepted, until one is
+    needs_impact: list = field(default_factory=list)  # pairs whose fail was kept without its impact, until one is given
+    impact_asked: bool = False  # whether a submission was sent back for those impacts, which is done once
     refusals: int = 0  # answers not accepted, like a pass on a page whose destination it didn't read
     invented: int = 0  # answers for ids or skills its tools never showed
     tool_calls: Counter = field(default_factory=Counter)  # by tool
@@ -289,6 +298,7 @@ class Run:
             "known": self.known, "answered": sum(pair in self.answers for pair in self.expected),
             "unanswered": [f"{item_id} {skill}" for item_id, skill in self.unanswered()],
             "dropped": [f"{item_id} {skill}" for item_id, skill in self.dropped],
+            "no_impact": [f"{item_id} {skill}" for item_id, skill in self.needs_impact],
             "omitted_first": len(self.first_missing or []), "refusals": self.refusals, "invented": self.invented,
             "tool_calls": dict(self.tool_calls), "destinations_read": self.read, "skills_loaded": self.skills_loaded,
             "skill_files_read": self.skill_files_read, **{key: self.usage[key] for key in USAGE},
@@ -306,13 +316,10 @@ def finding(run, work, pair, answer):
             "suggested_fix": getattr(answer, "suggested_fix", None)}
 
 def task_prompt(run, toolkit):
-    part = f" Its items are split into parts, and this is part {run.batch}: the tools show only this part's." \
-        if run.batch else ""
+    part = " Its items are split into parts: the tools show only this part's." if run.batch else ""
     return f"Task {run.task}: check the page {run.url}.{part}{toolkit.task_text()}"
 
 def keep_findings(run, work, toolkit, findings):
-    # keeps the findings that answer a pair the run was given and has no answer for yet, unless they are refused.
-    # Returns how many it kept, and the ones it refused, each as (pair, why)
     expected = set(run.expected)
     kept, refused = 0, []
     for entry in findings:
@@ -320,6 +327,13 @@ def keep_findings(run, work, toolkit, findings):
         if pair not in expected:
             if element_id(*pair) not in work.questions.elements:
                 run.invented += 1  # an item answered before, shown again for its page's outline, isn't
+        elif pair in run.needs_impact:
+            if entry.impact:
+                answer = run.answers[pair]
+                run.answers[pair] = answer.model_copy(update={
+                    "impact": entry.impact, "suggested_fix": entry.suggested_fix or answer.suggested_fix})
+                run.needs_impact.remove(pair)
+                kept += 1
         elif pair not in run.answers:
             why = (f"load the {entry.skill} skill with load_skill first" if entry.skill not in run.skills_loaded
                    else entry.problem() or toolkit.refused(entry))
@@ -331,6 +345,8 @@ def keep_findings(run, work, toolkit, findings):
                 run.answers[pair] = entry.answer(element_id(*pair))
                 run.refused.pop(pair, None)
                 kept += 1
+                if entry.missing_impact():
+                    run.needs_impact.append(pair)
                 if entry.verdict == "fail":
                     # a fail can make the item's other skills needless, like a link's redirect after its soft-404.
                     # One already answered keeps its answer
@@ -346,17 +362,18 @@ def keep_findings(run, work, toolkit, findings):
 async def run_batch(agent, work, skills, toolkit, run, batch):
     toolkit.start(run, batch, lambda findings: keep_findings(run, work, toolkit, findings))
     run.expected = [(item_id, skill) for item_id in batch for skill in toolkit.needs[item_id]]
-    skill_tools = SkillTools({skill.name: skill for skill in skills}, load_once=True)
+    skill_tools = SkillTools({skill.name: skill for skill in skills}, load_once=True, with_examples=True)
     run.skills_loaded, run.skill_files_read = skill_tools.loaded, skill_tools.files_read
 
     def review(submitted):
-        # keeps the accepted answers this submission adds to the recorded ones, and returns the pairs still without one
         if toolkit.uncalled():
             return ["no tool call"]
-        keep_findings(run, work, toolkit, submitted.findings)
         missing = run.unanswered()
         if run.first_missing is None:
             run.first_missing = missing
+        if run.needs_impact and not run.impact_asked:
+            run.impact_asked = True
+            missing = missing + [pair for pair in run.expected if pair in run.needs_impact]
         return missing
 
     def reject(missing):
@@ -364,12 +381,14 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
         if uncalled:
             return (f"Not accepted: you haven't called {' and '.join(uncalled)} yet. Call it with {run.url}, check "
                     "every item it lists, record your findings with record_findings, then call submit_findings.")
-        unanswered = {}
+        unanswered, refused, impacts = {}, [], {}
         for item_id, skill in missing:
-            if (item_id, skill) not in run.refused:
+            if (item_id, skill) in run.needs_impact:
+                impacts.setdefault(item_id, []).append(skill)
+            elif (item_id, skill) in run.refused:
+                refused.append(f"- {item_id} {skill}: {run.refused[(item_id, skill)]}")
+            else:
                 unanswered.setdefault(item_id, []).append(skill)
-        refused = [f"- {item_id} {skill}: {run.refused[(item_id, skill)]}" for item_id, skill in missing
-                   if (item_id, skill) in run.refused]
         parts = ["Not accepted yet."]
         if unanswered:
             parts.append("These items have no finding for these skills: "
@@ -377,15 +396,18 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
                          + ".")
         if refused:
             parts.append("These findings weren't accepted:\n" + "\n".join(refused) + "\n")
-        parts.append("The findings you gave for the others are kept. Record these with record_findings, then call "
-                     "submit_findings.")
+        if impacts:
+            parts.append("These fails were recorded without their impact: "
+                         + "; ".join(f"{item_id} ({', '.join(skills)})" for item_id, skills in impacts.items())
+                         + '. Give each again as a finding, with its "impact".')
+        parts.append("The findings you gave for the others are kept, so don't send them again. Record these with "
+                     "record_findings, then call submit_findings.")
         return " ".join(parts)
 
     submitted, usage = await run_agent_async(
-        work.analyzers["links"].args, agent.system_prompt(skills), task_prompt(run, toolkit),
-        toolkit.tools() + skill_tools.tools() + [toolkit.record_tool(agent.findings_type)], agent.submission, review,
-        reject,
-        request_limit=agent.max_steps, output_name="submit_findings", text_submission=True)
+        work.analyzers["links"].args, agent.system_prompt(skills, toolkit.passes_example()), task_prompt(run, toolkit),
+        toolkit.offered_tools() + skill_tools.tools() + [toolkit.record_tool(agent.finding)], SubmitFindings, review,
+        reject, request_limit=agent.max_steps, output_name="submit_findings", text_submission=True)
     run.usage = usage
     if submitted is None:
         run.error = "it stopped before it handed in all its findings"
