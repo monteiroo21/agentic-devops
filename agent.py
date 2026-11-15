@@ -15,10 +15,13 @@ from common import (CONFIG, make_parser, model_and_settings, model_name, parse_a
 # The model calls the tools itself and submits one report
 
 class SkillTools:
-    def __init__(self, skills):
+    def __init__(self, skills, load_once=False):
         self.skills = skills
         self.loaded = []  # in the order the model first loaded them
         self.files_read = []  # as skill/path
+        # a skill loaded again returns a note, not its instructions again: a fleet agent reloaded every skill after a
+        # refusal, which only made its conversation longer
+        self.load_once = load_once
 
     def no_skill(self, name):
         return {"error": f"there is no skill named {name!r}; the skills are {', '.join(self.skills)}"}
@@ -33,6 +36,8 @@ class SkillTools:
         skill = self.skills.get(name)
         if skill is None:
             return self.no_skill(name)
+        if self.load_once and name in self.loaded:
+            return {"name": name, "note": "already loaded: its instructions are earlier in this conversation"}
         if name not in self.loaded:
             self.loaded.append(name)
         files = skill_files(skill)
@@ -125,8 +130,9 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
                 return False
             usage["text_replies"] += 1
             print(f"=====No tool call, asking {name} to call a tool=====")
-        for tool_name in turn.tool_calls:
-            print(f"====={name} wants to use the {tool_name} tool=====")
+        for tool_name, args in zip(turn.tool_calls, turn.tool_args):
+            # the arguments as the model wrote them, before validation drops a field it doesn't know
+            print(f"====={name} wants to use the {tool_name} tool=====\n{args}")
         return True
 
     def show_request(request):

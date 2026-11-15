@@ -17,15 +17,18 @@ load_skill before you judge with it: its instructions say what to check, when to
    axe-core's message.
 2. Decide which items need a closer look, as the skill's "When to look closer" says. Call get_rule_help,
    get_element_html and get_computed_styles only for those, with all their ids in one call to each.
-3. Record your findings with record_findings as you go, at most 10 findings per call: one finding for every item in
-   the task, and only for those ids. It tells you which findings it refused, and why, and what is still unanswered.
+3. Record your answers with record_findings as you go, for at most 10 items per call: an answer for every item in
+   the task, and only for those ids. Give the passes in passes, by the item's id, like
+   {"review-3": ["axe-needs-review"]}, and each fail or unsure as a finding. It tells you which answers it refused,
+   and why, and what is still unanswered.
 4. When record_findings shows nothing unanswered, call submit_findings, with no findings.
 
-For every finding, give the verdict, and a reason for a fail or an unsure:
-- pass: it meets the rule. Leave the reason empty.
-- fail: what the tools returned shows that it does not. The reason says what shows the problem, in a few words.
-- unsure: what the tools returned is not enough to decide. The reason says what is missing. If you can't check
-  something, the answer is unsure, never fail.
+Each answer is one of:
+- pass: it meets the rule. It goes in passes, with no reason.
+- fail: what the tools returned shows that it does not. It is a finding, whose reason says what shows the problem,
+  in a few words.
+- unsure: what the tools returned is not enough to decide. It is a finding, whose reason says what is missing. If
+  you can't check something, the answer is unsure, never fail.
 Only fail what breaks the rule, not what could merely be better.
 
 For every fail, also give:

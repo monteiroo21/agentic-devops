@@ -1,4 +1,5 @@
 import json
+from typing import get_args
 from urllib.parse import unquote, urldefrag, urlsplit
 from pydantic_ai import Tool
 from analyzers.links import leads_to_page, redirect_rule
@@ -125,22 +126,32 @@ class Toolkit:
 
     def record_tool(self, findings_type):
         # record_findings, which every agent has besides the tools its file lists, like submit_findings. It takes the
-        # findings the agent's submission takes
-        def record_findings(findings: findings_type):  # pyright: ignore[reportInvalidTypeForm]
-            """Records findings as you go, a few items at a time, as soon as you have judged them. An item and skill
-            that already has a finding keeps it. Returns how many findings it recorded, the ones it refused with why,
-            which you can give again fixed, and the items still without a finding (unanswered), each with the skills
-            it still needs. When nothing is unanswered, call submit_findings.
+        # findings the agent's submission takes, and the passes as a short list: a pass has no reason, so writing it
+        # as a whole finding only costs the agent time
+        finding = get_args(findings_type)[0]
+
+        # passes comes first: a model fills the arguments in order, and they are most of its answers
+        def record_findings(passes: dict[str, list[str]] = {},
+                            findings: findings_type = []):  # pyright: ignore[reportInvalidTypeForm]
+            """Records your answers as you go, a few items at a time, as soon as you have judged them. Give the passes
+            in passes, by item id, like {"link-3": ["soft-404", "link-purpose"]}, with no reason, and only each fail
+            or unsure as a finding. An item and skill that already has an answer keeps it. Returns how many answers
+            it recorded, the ones it refused with why, which you can give again fixed, and the items still without an
+            answer (unanswered), each with the skills it still needs. When nothing is unanswered, call
+            submit_findings.
 
             Args:
-                findings: The findings to record, each for an item and a skill that the tools listed.
+                passes: The skills each item passes, by the item's id.
+                findings: Only your fails and unsures, each for an item and a skill that the tools listed.
             """
             uncalled = self.uncalled()
             if uncalled:
                 return {"error": f"call {' and '.join(uncalled)} with {self.run.url} first: it lists the items to "
                                  "check"}
             self.run.tool_calls["record_findings"] += 1
-            kept, refused = self.keep(findings)
+            # the findings first, so that a fail drops the skills it makes needless before their passes are kept
+            kept, refused = self.keep(list(findings) + [finding(item_id=item_id, skill=skill, verdict="pass")
+                                                        for item_id, skills in passes.items() for skill in skills])
             unanswered = {}
             for item_id, skill in self.run.unanswered():
                 unanswered.setdefault(item_id, []).append(skill)

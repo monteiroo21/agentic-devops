@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import re
 import time
 from argparse import Namespace
 from collections import Counter
@@ -8,11 +9,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from agent import SkillTools, run_agent_async
 from analyzers.accessibility import AccessibilityAnalyzer
 from analyzers.links import LinkAnalyzer
-from common import CONFIG, Impact, Verdict, read_skill, trace_to_logfire
+from common import CONFIG, IMPACTS, Impact, Verdict, read_skill, trace_to_logfire
 from toolkits import TOOLKITS, element_id
 from tools.axe import wcag_number
 from tools.links import remember_results
@@ -22,6 +23,8 @@ FLEET = CONFIG.fleet
 CHECKS = {"links": LinkAnalyzer, "accessibility": AccessibilityAnalyzer}  # a skill's category is one of these
 USAGE = ("llm_requests", "input_tokens", "output_tokens", "truncated_replies", "text_replies", "text_submissions",
          "rejected_submissions")
+# an impact written into a finding's text, like "Impact: critical" at the end of its suggested_fix
+IMPACT_IN_TEXT = re.compile(rf"[\s.;,]*\bimpact\s*[:=-]\s*({'|'.join(IMPACTS)})\b\.?", re.IGNORECASE)
 
 class RatedVerdict(Verdict):
     impact: Impact | None = None  # pyright: ignore[reportInvalidTypeForm]
@@ -39,25 +42,48 @@ class AgentFinding(BaseModel):
 
     def problem(self):
         # why the finding can't be kept as it is, if it can't
-        if self.verdict != "pass" and not self.reason.strip():
-            return f"{'a fail' if self.verdict == 'fail' else 'an unsure'} needs its reason"
+        # it says the field and what goes in it: qwen sent the same fails three times on a bare "needs its impact"
+        if self.verdict == "fail" and not self.reason.strip():
+            return 'a fail needs "reason": the fact that shows the problem, in a few words'
+        if self.verdict == "unsure" and not self.reason.strip():
+            return 'an unsure needs "reason": what is missing to decide, in a few words'
         return None
 
 class RatedAgentFinding(AgentFinding):
-    impact: Impact | None = Field(  # pyright: ignore[reportInvalidTypeForm]
-        None, description="For a fail: how much the problem hurts the site's visitors. Leave it out otherwise.")
+    # a plain list of values, empty for none: as "one of these or null" qwen treated it as optional and left it out
+    impact: Literal[*IMPACTS, ""] = Field(  # pyright: ignore[reportInvalidTypeForm]
+        "", description="Needed for every fail: how much the problem hurts the site's visitors.")
     suggested_fix: str = Field("", description="For a fail: how to fix it, in a few words. Empty if you can't tell.")
+
+    @field_validator("impact", mode="before")
+    @classmethod
+    def plain_impact(cls, value):
+        return "" if value is None else value.strip().lower() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def impact_from_text(self):
+        # qwen writes the impact it chose into the fix or the reason, like "… Impact: critical", instead of the field:
+        # read it from there, and take it out of that text
+        if not self.impact:
+            for name in ("suggested_fix", "reason"):
+                found = IMPACT_IN_TEXT.search(getattr(self, name))
+                if found:
+                    self.impact = found[1].lower()
+                    setattr(self, name, IMPACT_IN_TEXT.sub("", getattr(self, name)).strip())
+                    break
+        return self
 
     def answer(self, element):
         failed = self.verdict == "fail"
         return RatedVerdict(id=element, reason=self.reason, verdict=self.verdict,
-                            impact=self.impact if failed else None,
+                            impact=(self.impact or None) if failed else None,
                             suggested_fix=(self.suggested_fix or None) if failed else None)
 
     def problem(self):
         problem = super().problem()
-        if problem is None and self.verdict == "fail" and self.impact is None:
-            return "a fail needs its impact"
+        if problem is None and self.verdict == "fail" and not self.impact:
+            return ('a fail needs "impact": one of "critical", "serious", "moderate" or "minor", as the skill\'s Impact '
+                    'says, next to its "reason"')
         return problem
 
 # The findings are recorded with record_findings as the agent goes, so the submission only ends the run: findings given
@@ -93,8 +119,9 @@ class SkillFile:
         return ["wcag" + number.replace(".", "") for number in self.wcag]
 
     def line(self):
+        # its name alone before the colon, the name load_skill takes: qwen read "link-purpose (WCAG 2.4.4)" as one
         about = f" (WCAG {', '.join(self.wcag)})" if self.wcag else ""
-        return f"- {self.name}{about}: {self.description}"
+        return f"- {self.name}: {self.description}{about}"
 
 def load_skill(path):
     front, _ = read_skill(path)
@@ -319,7 +346,7 @@ def keep_findings(run, work, toolkit, findings):
 async def run_batch(agent, work, skills, toolkit, run, batch):
     toolkit.start(run, batch, lambda findings: keep_findings(run, work, toolkit, findings))
     run.expected = [(item_id, skill) for item_id in batch for skill in toolkit.needs[item_id]]
-    skill_tools = SkillTools({skill.name: skill for skill in skills})
+    skill_tools = SkillTools({skill.name: skill for skill in skills}, load_once=True)
     run.skills_loaded, run.skill_files_read = skill_tools.loaded, skill_tools.files_read
 
     def review(submitted):
