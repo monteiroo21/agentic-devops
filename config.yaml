@@ -15,6 +15,7 @@ agent:
   max_invalid_reports: 3
   max_tool_retries: 2
   max_requests: 50
+  max_cut_off_retries: 2
 workflow:
   batch_size: 8
   max_retries: 2
@@ -66,8 +67,8 @@ fleet:
   pages_per_call: 10
   tasks_per_call: 10
   batch_size: 10
-  max_output_tokens: 800  # at ~0.65 s per token late in a part, a full reply takes ~520 s, under timeout_s
-  timeout_s: 600
+  max_output_tokens: 2000
+  timeout_s: 1500
   page_text_words: 150
   section_words: 15
   part_words: 30

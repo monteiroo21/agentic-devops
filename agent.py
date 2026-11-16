@@ -4,8 +4,10 @@ import time
 from collections import Counter
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from pydantic_ai import (Agent, BinaryContent, ModelAPIError, ModelRetry, RetryPromptPart, TextOutput, Tool,
-                         ToolOutput, ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, UsageLimits)
+from dataclasses import replace
+from pydantic_ai import (Agent, BinaryContent, ModelAPIError, ModelHTTPError, ModelRequest, ModelRetry,
+                         RetryPromptPart, TextOutput, Tool, ToolOutput, ToolReturnPart, UnexpectedModelBehavior,
+                         UsageLimitExceeded, UsageLimits, UserPromptPart, capture_run_messages)
 from pydantic_ai.capabilities import ProcessHistory
 from analyzers import ANALYZERS
 from chat_backends import read_response
@@ -81,12 +83,21 @@ def printable(value):
         return f"<{value.media_type}, {len(value.data)} bytes>"
     return str(value)
 
+def cut_off(error):
+    # Ollama answers a tool call cut off at the output cap with an error, not with the part of it the model wrote:
+    # HTTP 500, "invalid tool call arguments … unexpected end of JSON input"
+    text = f"{error} {getattr(error, 'body', '')}".lower()
+    return (isinstance(error, ModelHTTPError) and error.status_code == 500
+            and ("unexpected end of json input" in text or "invalid tool call arguments" in text))
+
 def run_agent(*args, **kwargs):
     return asyncio.run(run_agent_async(*args, **kwargs))
 
 async def run_agent_async(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(),
                           session=None, request_limit=CONFIG.agent.max_requests, process_history=None,
-                          output_name="submit_report", text_submission=False):
+                          output_name="submit_report", text_submission=False, cut_off_message=None):
+    # cut_off_message: what the model is told when a reply is cut off at the output cap in the middle of a tool call,
+    # to go on with the run. Without one, the run stops there
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
@@ -155,11 +166,16 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
             elif isinstance(part, RetryPromptPart):
                 print(f"=====Sent back to {name}=====\n{part.model_response()}\n")
 
-    async def run():
+    current = {}  # the attempt running now, whose usage a continuation carries on
+
+    async def attempt(prompt, history, run_usage):
         with agent.parallel_tool_call_execution_mode("sequential"):
             usage_limits = UsageLimits(request_limit=request_limit)
-            async with session or nullcontext(), agent.iter(user_prompt, usage_limits=usage_limits) as agent_run:
+            async with agent.iter(prompt, message_history=history, usage=run_usage,
+                                  usage_limits=usage_limits) as agent_run:
+                current["run"] = agent_run
                 last = time.perf_counter()
+                resumed = history is not None  # its first request was shown before it was cut off
                 async for node in agent_run:
                     # the time since the last node went to running it: the model's reply, or the tools it called
                     now = time.perf_counter()
@@ -171,8 +187,36 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
                             return None
                     elif Agent.is_model_request_node(node):
                         usage["tools_s"] += elapsed
-                        show_request(node.request)
+                        if not resumed:
+                            show_request(node.request)
+                        resumed = False
                 return agent_run.result.output
+
+    async def run():
+        # a reply cut off at the output cap is answered by going on with the same conversation, told why: sent again as
+        # it was, the request would only be cut off again. Ollama doesn't return the part it wrote, so nothing in it
+        # was taken, and the tools' results and the answers recorded before it are kept
+        prompt, history, run_usage = user_prompt, None, None
+        async with session or nullcontext():
+            while True:
+                with capture_run_messages() as messages:
+                    try:
+                        return await attempt(prompt, history, run_usage)
+                    except ModelAPIError as error:
+                        if (cut_off_message is None or not cut_off(error)
+                                or usage["cut_off_retries"] >= limits.max_cut_off_retries
+                                or not messages or not isinstance(messages[-1], ModelRequest)):
+                            raise
+                usage.update(cut_off_retries=1, truncated_replies=1)
+                print(f"====={name} was cut off at the output token limit in the middle of a tool call, so it is "
+                      f"asked to go on in smaller calls ({usage['cut_off_retries']} of "
+                      f"{limits.max_cut_off_retries})=====\n{cut_off_message}\n")
+                # the request that got no reply, with the message added to it once: a run resumed without a prompt
+                # sends the last request of its history again
+                parts = [part for part in messages[-1].parts
+                         if not (isinstance(part, UserPromptPart) and part.content == cut_off_message)]
+                history = [*messages[:-1], replace(messages[-1], parts=[*parts, UserPromptPart(cut_off_message)])]
+                prompt, run_usage = None, current["run"].usage
 
     try:
         submitted = await run()

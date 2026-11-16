@@ -45,6 +45,7 @@ class AgentConfig(Section):
     max_invalid_reports: int
     max_tool_retries: int
     max_requests: int
+    max_cut_off_retries: int  # times a run goes on after a reply cut off at the output cap, told to write less
 
 class WorkflowConfig(Section):
     batch_size: int

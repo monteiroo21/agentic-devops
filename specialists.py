@@ -22,7 +22,7 @@ from workflow import Questions
 FLEET = CONFIG.fleet
 CHECKS = {"links": LinkAnalyzer, "accessibility": AccessibilityAnalyzer}  # a skill's category is one of these
 USAGE = ("llm_requests", "input_tokens", "output_tokens", "truncated_replies", "text_replies", "text_submissions",
-         "rejected_submissions")
+         "rejected_submissions", "cut_off_retries")
 # an impact written into a finding's text, like "Impact: critical" at the end of its suggested_fix
 IMPACT_IN_TEXT = re.compile(rf"[\s.;,]*\bimpact\s*[:=-]\s*({'|'.join(IMPACTS)})\b\.?", re.IGNORECASE)
 
@@ -319,18 +319,39 @@ def finding(run, work, pair, answer):
             "reason": answer.reason, "verdict": answer.verdict, "impact": getattr(answer, "impact", None),
             "suggested_fix": getattr(answer, "suggested_fix", None)}
 
+# what an agent is told when its reply was cut off at the output cap in the middle of a tool call: Ollama returns none
+# of it, so the run goes on from the request before it
+CUT_OFF_MESSAGE = ("Your last reply was cut off at the output limit before it was complete, so none of it was taken. "
+                   "Send it again in smaller calls: at most 5 items per record_findings call.")
+
 def task_prompt(run, toolkit):
     part = " Its items are split into parts: the tools show only this part's." if run.batch else ""
     return f"Task {run.task}: check the page {run.url}.{part}{toolkit.task_text()}"
 
+def not_asked_why(run, work, toolkit, pair):
+    # why an answer for a pair the run wasn't given isn't taken, said back to the model: dropped without a word, Gemini
+    # sent "h1" for the item h-1 again and again, told only that h-1 was still unanswered
+    item_id, skill = pair
+    if item_id in toolkit.batch:
+        failed = [earlier for (answered, earlier), answer in run.answers.items()
+                  if answered == item_id and answer.verdict == "fail" and skill in toolkit.needless_after_fail(earlier)]
+        if pair in run.dropped and failed:
+            return f"{item_id} needs no {skill} answer after its {failed[0]} fail"
+        asked = [later for answered, later in run.expected if answered == item_id]
+        return (f"{item_id} isn't asked about {skill}" + (f"; it is asked about {', '.join(asked)}" if asked else ""))
+    if element_id(*pair) in work.questions.elements:
+        return f"{item_id} isn't asked in this part"  # in another part, or answered before
+    return f"there is no item {item_id} in this part"
+
 def keep_findings(run, work, toolkit, findings):
     expected = set(run.expected)
-    kept, refused = 0, []
+    kept, refused, not_asked = 0, [], {}
     for entry in findings:
         pair = (entry.item_id, entry.skill)
         if pair not in expected:
             if element_id(*pair) not in work.questions.elements:
                 run.invented += 1  # an item answered before, shown again for its page's outline, isn't
+            not_asked[pair] = not_asked_why(run, work, toolkit, pair)
         elif pair in run.needs_impact:
             if entry.impact:
                 answer = run.answers[pair]
@@ -361,7 +382,7 @@ def keep_findings(run, work, toolkit, findings):
                             run.expected.remove(later)
                             run.refused.pop(later, None)
                             run.dropped.append(later)
-    return kept, refused
+    return kept, refused, list(not_asked.items())
 
 async def run_batch(agent, work, skills, toolkit, run, batch):
     toolkit.start(run, batch, lambda findings: keep_findings(run, work, toolkit, findings))
@@ -411,7 +432,8 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
     submitted, usage = await run_agent_async(
         work.analyzers["links"].args, agent.system_prompt(skills, toolkit.passes_example()), task_prompt(run, toolkit),
         toolkit.offered_tools() + skill_tools.tools() + [toolkit.record_tool(agent.finding)], SubmitFindings, review,
-        reject, request_limit=agent.max_steps, output_name="submit_findings", text_submission=True)
+        reject, request_limit=agent.max_steps, output_name="submit_findings", text_submission=True,
+        cut_off_message=CUT_OFF_MESSAGE)
     run.usage = usage
     if submitted is None:
         run.error = "it stopped before it handed in all its findings"
