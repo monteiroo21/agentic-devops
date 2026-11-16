@@ -11,7 +11,7 @@ from agent import run_agent
 from common import CONFIG, docstring_with, read_prompt, report_fields, report_path, trace_to_logfire
 from orchestrator import CHECKS, Orchestrator, PageResult, SiteReport, filled, shortened, unique
 from report_page import report_page
-from specialists import AGENT_OF, AGENTS, USAGE, PageWork, page_args, run_task, task_status
+from specialists import AGENT_OF, AGENTS, BACKENDS, USAGE, PageWork, agent_model, page_args, run_task, task_status
 from tools.axe import axe_selector
 from tools.links import check_url, remember_results
 from workflow import Questions, page_report
@@ -67,6 +67,7 @@ class SubmitReport(BaseModel):
 class FleetReport(SiteReport):
     mode: str = "fleet"
     request: str  # what the user asked for
+    worker_backend: str = "ollama"  # where the agents' model ran: ollama on this machine, or gemini in the cloud
     left_out: list[LeftOut]  # as the orchestrator submitted it
     agents: dict[str, list[str]]  # each agent's skills
     static_check_coverage: dict[str, dict[str, int]]  # per static check: its pages by how the run ended
@@ -89,8 +90,8 @@ class Fleet(Orchestrator):
         return {}  # the agents replace the workflow's judges
 
     def worker_args(self, check, url, site_pages=()):
-        return page_args(check, url, self.args.worker_model, self.args.no_think, self.args.max_output_tokens,
-                         site_pages)
+        return page_args(check, url, self.args.worker_backend, self.args.worker_model, self.args.no_think,
+                         self.args.max_output_tokens, site_pages)
 
     def page_work(self, page_id):
         if page_id not in self.work:
@@ -448,6 +449,7 @@ class Fleet(Orchestrator):
             unbacked_claims=usage["unbacked_claims"],
             text_replies=usage["text_replies"],
             request=self.args.request,
+            worker_backend=self.args.worker_backend,
             left_out=submitted.left_out if submitted else [],
             agents={agent.name: list(agent.skills) for agent in AGENTS.values()},
             worker_model=self.args.worker_model,
@@ -481,18 +483,22 @@ class Fleet(Orchestrator):
 def parse_args():
     parser = argparse.ArgumentParser(description="Check a website with a fleet: a Gemini model reads your request, "
                                                  "runs static checks on the site's pages and sends tasks to agents, "
-                                                 "small local models that each own a few related skills, and whose "
-                                                 "findings are final.")
+                                                 "models that each own a few related skills, small local ones by "
+                                                 "default, and whose findings are final.")
     parser.add_argument("url", help="the site's start page")
     parser.add_argument("--request", default=DEFAULT_REQUEST,
                         help=f'what to check, in your own words (default "{DEFAULT_REQUEST}")')
     parser.add_argument("--model", help=f"the orchestrator's Gemini model (default {CONFIG.models.gemini})")
-    parser.add_argument("--worker-model", default=CONFIG.models.ollama,
-                        help=f"the agents' Ollama model (default {CONFIG.models.ollama})")
+    parser.add_argument("--worker-backend", choices=BACKENDS, default="ollama",
+                        help="where the agents' model runs: ollama (a local model, the default) or gemini (Google's "
+                             "API, in the cloud)")
+    parser.add_argument("--worker-model", help="the agents' model; defaults to "
+                                               + ", ".join(f"{model} for {backend}"
+                                                           for backend, model in CONFIG.models.model_dump().items()))
     parser.add_argument("--no-think", action="store_true",
-                        help="the agents answer without thinking first, which is much faster on a CPU")
+                        help="ollama only: the agents answer without thinking first, which is much faster on a CPU")
     parser.add_argument("--max-output-tokens", type=int, default=FLEET.max_output_tokens,
-                        help="the most tokens an agent may write per turn, thinking included "
+                        help="ollama only: the most tokens an agent may write per turn, thinking included "
                              f"(default {FLEET.max_output_tokens})")
     parser.add_argument("--recrawl", action="store_true",
                         help="crawl the site again, even if a recent crawl of it was saved")
@@ -504,6 +510,8 @@ def parse_args():
         parser.error(f"the URL must start with http:// or https://, got {args.url!r}")
     if args.max_pages < 1:
         parser.error("--max-pages must be at least 1")
+    args.worker_model = agent_model(parser, args.worker_backend, args.worker_model, args.no_think,
+                                    args.max_output_tokens)
     return args
 
 def coordinator_prompt():

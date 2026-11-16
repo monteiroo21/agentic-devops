@@ -232,11 +232,15 @@ def load_agents(folder, skills_folder, keys):
 AGENTS = load_agents(FLEET.folder, FLEET.skills, FLEET.agents)
 AGENT_OF = {skill: agent for agent in AGENTS.values() for skill in agent.skills}  # by skill name
 
-def page_args(check, url, model, no_think, max_output_tokens, site_pages=()):
-    # what a page's analyzer and its agents run with. site_pages: the site's pages that are checked on their own, so
-    # one the browser lands on isn't judged twice. The link agent reads the linked pages itself. timeout_s is the
-    # agents' own, shorter than the analyzers'
-    return Namespace(url=url, analyzer=CHECKS[check].name, backend="ollama", model=model, no_think=no_think,
+BACKENDS = list(CONFIG.models.model_dump())  # where the agents' model runs: ollama on this machine, or gemini in the cloud
+
+def agent_model(parser, backend, model, no_think, max_output_tokens):
+    if backend != "ollama" and (no_think or max_output_tokens != FLEET.max_output_tokens):
+        parser.error(f"--no-think and --max-output-tokens only work with the ollama backend, not {backend}")
+    return model or getattr(CONFIG.models, backend)
+
+def page_args(check, url, backend, model, no_think, max_output_tokens, site_pages=()):
+    return Namespace(url=url, analyzer=CHECKS[check].name, backend=backend, model=model, no_think=no_think,
                      max_output_tokens=max_output_tokens, timeout_s=FLEET.timeout_s, output=None,
                      checked_elsewhere=set(site_pages), read_linked_pages=False)
 
@@ -476,23 +480,29 @@ def main():
     parser.add_argument("url", help="the page to check")
     parser.add_argument("--skills", nargs="+", metavar="SKILL",
                         help="the skills to load (default: all of the agent's)")
-    parser.add_argument("--model", default=CONFIG.models.ollama,
-                        help=f"the agent's Ollama model (default {CONFIG.models.ollama})")
+    parser.add_argument("--backend", choices=BACKENDS, default="ollama",
+                        help="where the agent's model runs: ollama (a local model, the default) or gemini (Google's "
+                             "API, in the cloud)")
+    parser.add_argument("--model", help="the agent's model; defaults to "
+                                        + ", ".join(f"{model} for {backend}"
+                                                    for backend, model in CONFIG.models.model_dump().items()))
     parser.add_argument("--no-think", action="store_true",
-                        help="the agent answers without thinking first, which is much faster on a CPU")
+                        help="ollama only: the agent answers without thinking first, which is much faster on a CPU")
     parser.add_argument("--max-output-tokens", type=int, default=FLEET.max_output_tokens,
-                        help="the most tokens the agent may write per turn, thinking included "
+                        help="ollama only: the most tokens the agent may write per turn, thinking included "
                              f"(default {FLEET.max_output_tokens})")
     args = parser.parse_args()
     if urlsplit(args.url).scheme not in ("http", "https") or not urlsplit(args.url).hostname:
         parser.error(f"the URL must start with http:// or https://, got {args.url!r}")
+    args.model = agent_model(parser, args.backend, args.model, args.no_think, args.max_output_tokens)
     agent = agents[args.agent]
     unknown = [skill for skill in args.skills or [] if skill not in agent.skills]
     if unknown:
         parser.error(f"{agent.name} has no skill {', '.join(unknown)}; its skills are {', '.join(agent.skills)}")
 
     remember_results()
-    work = PageWork(lambda check: page_args(check, args.url, args.model, args.no_think, args.max_output_tokens))
+    work = PageWork(lambda check: page_args(check, args.url, args.backend, args.model, args.no_think,
+                                            args.max_output_tokens))
     runs = asyncio.run(run_task(agent, work, list(dict.fromkeys(args.skills or agent.skills)), "t1"))
     print(f"\n====={agent.name} on {args.url}: {task_status(runs)}=====")
     for run in runs:

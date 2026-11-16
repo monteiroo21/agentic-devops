@@ -2,7 +2,7 @@ models:
   gemini: gemini-3.5-flash-lite
   ollama: qwen3:4b-instruct
 gemini:
-  thinking_level: HIGH
+  thinking_level: LOW
   retry_attempts: 8
 ollama:
   url: http://localhost:11434/v1
