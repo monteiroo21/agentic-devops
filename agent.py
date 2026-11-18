@@ -211,8 +211,6 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
                 print(f"====={name} was cut off at the output token limit in the middle of a tool call, so it is "
                       f"asked to go on in smaller calls ({usage['cut_off_retries']} of "
                       f"{limits.max_cut_off_retries})=====\n{cut_off_message}\n")
-                # the request that got no reply, with the message added to it once: a run resumed without a prompt
-                # sends the last request of its history again
                 parts = [part for part in messages[-1].parts
                          if not (isinstance(part, UserPromptPart) and part.content == cut_off_message)]
                 history = [*messages[:-1], replace(messages[-1], parts=[*parts, UserPromptPart(cut_off_message)])]
@@ -221,8 +219,6 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
     try:
         submitted = await run()
     except (UnexpectedModelBehavior, UsageLimitExceeded, ModelAPIError) as e:
-        # out of retries, a reply cut off in the middle of a tool call, the request limit, or an error from the
-        # model's API that its own retries didn't get past, like a rate limit
         print(f"=====The run stopped: {e}=====")
         submitted = None
 

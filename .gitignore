@@ -17,3 +17,4 @@ crawls/
 papers/*.pdf
 papers/notes
 slm-vs-llm.csv
+logs/

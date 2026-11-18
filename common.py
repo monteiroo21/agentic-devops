@@ -38,6 +38,8 @@ class OllamaConfig(Section):
     url: str
     max_output_tokens: int
     timeout_s: float  # how long a request may take before it is dropped, unless its arguments carry a timeout_s
+    temperature: float
+    top_p: float
 
 class AgentConfig(Section):
     max_rejections: int
@@ -195,7 +197,8 @@ def model_and_settings(args):
     return make_model(args.backend, model_name(args), think=not args.no_think,
                       max_output_tokens=args.max_output_tokens, ollama_url=CONFIG.ollama.url,
                       thinking_level=CONFIG.gemini.thinking_level, retry_attempts=CONFIG.gemini.retry_attempts,
-                      ollama_timeout_s=timeout_s)
+                      ollama_timeout_s=timeout_s, ollama_temperature=CONFIG.ollama.temperature,
+                      ollama_top_p=CONFIG.ollama.top_p)
 
 # Reports
 
@@ -353,12 +356,8 @@ def object_answer(properties, required):
     return {"type": "object", "properties": properties, "required": required}
 
 def list_answer(*positions):
-    # an answer written as a list with one value per position, which takes the model fewer tokens than an object's
-    # keys. The model never sees the schema, so the judge's prompt says what each position is
     return {"type": "array", "prefixItems": list(positions)}
 
-# FORMAT is the key the answers come under and their JSON schema.
-# The reason comes before the verdict, so the model explains before it decides
 class Verdict(BaseModel):
     FIELDS: ClassVar = ("id", "reason", "verdict")  # the positions of an answer's list
     FORMAT: ClassVar = ("verdicts", answers_schema("verdicts", list_answer(

@@ -22,20 +22,20 @@ class Turn:
     tool_args: list[str] = field(default_factory=list)  # each tool call's arguments, as the model wrote them
 
 def make_model(backend, name, think, max_output_tokens, ollama_url, thinking_level, retry_attempts=None,
-               ollama_timeout_s=None):
+               ollama_timeout_s=None, ollama_temperature=None, ollama_top_p=None):
     if backend == "ollama":
         # a long reply on a CPU can outlast the client's default timeout of 600 s, so the caller sets its own
         settings = OpenAIChatModelSettings(max_tokens=max_output_tokens)
         if ollama_timeout_s:
             settings["timeout"] = ollama_timeout_s
+        if ollama_temperature is not None:
+            settings["temperature"] = ollama_temperature
+        if ollama_top_p is not None:
+            settings["top_p"] = ollama_top_p
         if not think:
             settings["openai_reasoning_effort"] = "none"
-        # the OpenAI client sends a request again, up to twice, when it times out or fails, and pydantic-ai keeps its
-        # default. A request that timed out would only time out again on this CPU, so it fails at once instead
         client = AsyncOpenAI(base_url=ollama_url, api_key=os.getenv("OLLAMA_API_KEY") or "api-key-not-set",
                              max_retries=0)
-        # pydantic-ai sends max_tokens as max_completion_tokens by default, which Ollama ignores: replies went past the
-        # cap, up to the timeout. Ollama reads max_tokens
         profile = OpenAIModelProfile(openai_chat_supports_max_completion_tokens=False)
         return OllamaModel(name, provider=OllamaProvider(openai_client=client), profile=profile), settings
     # enough tries to wait out a per-minute limit, like the input tokens per minute

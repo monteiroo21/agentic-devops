@@ -47,8 +47,7 @@ class Toolkit:
         self.total = 0  # the (item, skill) pairs on the page, the ones answered on earlier pages included
         self.run = None
         self.batch = []  # the ids of the items the current run checks
-        self.keep = None  # keeps the current run's findings: returns how many it kept, the refused ones with why, and
-        # the ones the run wasn't asked, with why
+        self.keep = None
 
     @property
     def content(self):
@@ -137,13 +136,16 @@ class Toolkit:
         def record_findings(passes: dict[str, list[str]] = {},
                             findings: list[finding] = []):  # pyright: ignore[reportInvalidTypeForm]
             """Records your answers. Give the passes in passes, by item id, like {example}, with no reason, and only
-            each fail or unsure as a finding. An answer it records is kept, so don't send it again. Returns how many
-            answers it recorded; the ones it refused, with why, to give again fixed; the ones it didn't take because
-            this part doesn't ask them (not_asked), with why, so check their ids and skills against what the tools
-            listed; the items still without an answer (unanswered), each with the skills it still needs; the fails it
-            recorded without their impact (needs_impact), to give again with it; and the passes it ignored
-            (ignored_passes), since the same call also gave a finding for that item and skill, which counts instead.
-            When nothing is unanswered, call submit_findings.
+            each fail or unsure as a finding: one answer for each item and skill, never both a pass and a finding. An
+            answer it records is final, so don't send it again. Returns how many answers it recorded; the later answers
+            it didn't take because the item and skill already had a different answer recorded (already_answered), with
+            nothing to do about them; the ones it refused, with why, to give again fixed, like an item and skill given
+            two different answers in one call, of which it recorded none; the ones it didn't take because this part
+            doesn't ask them (not_asked), with why, so check their ids and skills against what the tools listed; the
+            items still without an answer (unanswered), each with the skills it still needs; the fails it recorded
+            without their impact (needs_impact), to give again with it; and the passes it ignored (ignored_passes),
+            since the same call also gave a finding for that item and skill, which counts instead. When nothing is
+            unanswered, call submit_findings.
 
             Args:
                 passes: The skills each item passes, by the item's id.
@@ -154,22 +156,18 @@ class Toolkit:
                 return {"error": f"call {' and '.join(uncalled)} with {self.run.url} first: it lists the items to "
                                  "check"}
             self.run.tool_calls["record_findings"] += 1
-            given = {(entry.item_id, entry.skill) for entry in findings}
             passed = [(item_id, skill) for item_id, skills in passes.items() for skill in dict.fromkeys(skills)]
-            ignored = {}
-            for item_id, skill in passed:
-                if (item_id, skill) in given:
-                    ignored.setdefault(item_id, []).append(skill)
             # the findings first, so that a fail drops the skills it makes needless before their passes are kept
-            kept, refused, not_asked = self.keep(
-                list(findings) + [finding(item_id=item_id, skill=skill, verdict="pass")
-                                  for item_id, skill in passed if (item_id, skill) not in given])
+            kept, refused, not_asked, already, ignored = self.keep(
+                list(findings) + [finding(item_id=item_id, skill=skill, verdict="pass") for item_id, skill in passed])
             unanswered, needs_impact = {}, {}
             for item_id, skill in self.run.unanswered():
                 unanswered.setdefault(item_id, []).append(skill)
             for item_id, skill in self.run.needs_impact:
                 needs_impact.setdefault(item_id, []).append(skill)
             return filled({"recorded": kept,
+                           "already_answered": [{"id": item_id, "skill": skill, "recorded": recorded, "sent": sent}
+                                                for (item_id, skill), recorded, sent in already] or None,
                            "refused": [{"id": item_id, "skill": skill, "why": why}
                                        for (item_id, skill), why in refused] or None,
                            "not_asked": [{"id": item_id, "skill": skill, "why": why}

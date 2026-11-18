@@ -23,7 +23,6 @@ FLEET = CONFIG.fleet
 CHECKS = {"links": LinkAnalyzer, "accessibility": AccessibilityAnalyzer}  # a skill's category is one of these
 USAGE = ("llm_requests", "input_tokens", "output_tokens", "truncated_replies", "text_replies", "text_submissions",
          "rejected_submissions", "cut_off_retries")
-# an impact written into a finding's text, like "Impact: critical" at the end of its suggested_fix
 IMPACT_IN_TEXT = re.compile(rf"[\s.;,]*\bimpact\s*[:=-]\s*({'|'.join(IMPACTS)})\b\.?", re.IGNORECASE)
 
 class RatedVerdict(Verdict):
@@ -41,8 +40,6 @@ class AgentFinding(BaseModel):
         return Verdict(id=element, reason=self.reason, verdict=self.verdict)
 
     def problem(self):
-        # why the finding can't be kept as it is, if it can't
-        # it says the field and what goes in it: qwen sent the same fails three times on a bare "needs its impact"
         if self.verdict == "fail" and not self.reason.strip():
             return 'a fail needs "reason": the fact that shows the problem, in a few words'
         if self.verdict == "unsure" and not self.reason.strip():
@@ -53,9 +50,6 @@ class AgentFinding(BaseModel):
         return False  # whether it is a fail kept without the impact it needs, which a later finding can add
 
 class RatedAgentFinding(AgentFinding):
-    # a plain list of values, empty for none: as "one of these or null" qwen treated it as optional and left it out.
-    # Required, so that the schema qwen reads asks for it: with a default, qwen left it out too. A finding without it
-    # is still taken, so that it isn't refused for it: its fail is kept, and a later finding can add the impact
     impact: Literal[*IMPACTS, ""] = Field(  # pyright: ignore[reportInvalidTypeForm]
         description="For a fail: how much the problem hurts the site's visitors, as the skill's Impact says. Empty "
                     "for an unsure.")
@@ -75,8 +69,6 @@ class RatedAgentFinding(AgentFinding):
 
     @model_validator(mode="after")
     def impact_from_text(self):
-        # qwen writes the impact it chose into the fix or the reason, like "… Impact: critical", instead of the field:
-        # read it from there, and take it out of that text
         if not self.impact:
             for name in ("suggested_fix", "reason"):
                 found = IMPACT_IN_TEXT.search(getattr(self, name))
@@ -95,15 +87,11 @@ class RatedAgentFinding(AgentFinding):
     def missing_impact(self):
         return self.verdict == "fail" and not self.impact
 
-# The findings are recorded with record_findings, so the submission only ends the run, and takes nothing: when it took
-# findings too, qwen repeated in it the ones it had recorded, and one such repeat ran into the output cap. Extra fields
-# are refused, so that a reply that writes a tool call out as JSON isn't taken for the submission
 class SubmitFindings(BaseModel):
     """Finish the task, once record_findings shows nothing unanswered."""
     model_config = ConfigDict(extra="forbid")
 
-ANSWERS = {"findings": AgentFinding, "rated-findings": RatedAgentFinding}  # what an agent's file can name: what
-# record_findings takes
+ANSWERS = {"findings": AgentFinding, "rated-findings": RatedAgentFinding}  # what an agent's file can name: what record_findings takes
 
 @dataclass(frozen=True)
 class SkillFile:
@@ -281,6 +269,8 @@ class Run:
     first_missing: list | None = None  # the pairs its first submission had no accepted answer for
     refused: dict = field(default_factory=dict)  # by pair: why its latest answer wasn't accepted, until one is
     needs_impact: list = field(default_factory=list)  # pairs whose fail was kept without its impact, until one is given
+    already_answered: list = field(default_factory=list)  # (pair, recorded verdict, later verdict not taken)
+    contradicted: list = field(default_factory=list)  # pairs sent back once for different verdicts in one call
     impact_asked: bool = False  # whether a submission was sent back for those impacts, which is done once
     refusals: int = 0  # answers not accepted, like a pass on a page whose destination it didn't read
     invented: int = 0  # answers for ids or skills its tools never showed
@@ -303,6 +293,9 @@ class Run:
             "unanswered": [f"{item_id} {skill}" for item_id, skill in self.unanswered()],
             "dropped": [f"{item_id} {skill}" for item_id, skill in self.dropped],
             "no_impact": [f"{item_id} {skill}" for item_id, skill in self.needs_impact],
+            "already_answered": [f"{item_id} {skill}: {recorded}, then {sent}"
+                                 for (item_id, skill), recorded, sent in self.already_answered],
+            "contradictions": [f"{item_id} {skill}" for item_id, skill in self.contradicted],
             "omitted_first": len(self.first_missing or []), "refusals": self.refusals, "invented": self.invented,
             "tool_calls": dict(self.tool_calls), "destinations_read": self.read, "skills_loaded": self.skills_loaded,
             "skill_files_read": self.skill_files_read, **{key: self.usage[key] for key in USAGE},
@@ -319,8 +312,6 @@ def finding(run, work, pair, answer):
             "reason": answer.reason, "verdict": answer.verdict, "impact": getattr(answer, "impact", None),
             "suggested_fix": getattr(answer, "suggested_fix", None)}
 
-# what an agent is told when its reply was cut off at the output cap in the middle of a tool call: Ollama returns none
-# of it, so the run goes on from the request before it
 CUT_OFF_MESSAGE = ("Your last reply was cut off at the output limit before it was complete, so none of it was taken. "
                    "Send it again in smaller calls: at most 5 items per record_findings call.")
 
@@ -329,8 +320,6 @@ def task_prompt(run, toolkit):
     return f"Task {run.task}: check the page {run.url}.{part}{toolkit.task_text()}"
 
 def not_asked_why(run, work, toolkit, pair):
-    # why an answer for a pair the run wasn't given isn't taken, said back to the model: dropped without a word, Gemini
-    # sent "h1" for the item h-1 again and again, told only that h-1 was still unanswered
     item_id, skill = pair
     if item_id in toolkit.batch:
         failed = [earlier for (answered, earlier), answer in run.answers.items()
@@ -343,23 +332,68 @@ def not_asked_why(run, work, toolkit, pair):
         return f"{item_id} isn't asked in this part"  # in another part, or answered before
     return f"there is no item {item_id} in this part"
 
+def contradiction_why(entries):
+    verdicts = [verdict for verdict in ("pass", "fail", "unsure") if any(entry.verdict == verdict for entry in entries)]
+    gave = " and ".join(f"{'an' if verdict == 'unsure' else 'a'} {verdict}" for verdict in verdicts)
+    said = [f'Your {entry.verdict} said "{entry.reason.strip()}".' for entry in entries
+            if entry.verdict != "pass" and entry.reason.strip()]
+    return " ".join([f"this call gave it {gave}, so none was recorded.", *said,
+                     "Decide which it is and give it once: in passes, or as a finding"])
+
 def keep_findings(run, work, toolkit, findings):
     expected = set(run.expected)
-    kept, refused, not_asked = 0, [], {}
+    kept, refused, not_asked, already, ignored = 0, [], {}, [], {}
+    by_pair = {}
+    for entry in findings:
+        by_pair.setdefault((entry.item_id, entry.skill), []).append(entry)
+    sent_back = set()  # the pairs whose answers in this call are all left out
+    for pair, entries in by_pair.items():
+        if len({entry.verdict for entry in entries}) == 1:
+            continue
+        if pair in expected and pair not in run.answers and pair not in run.contradicted:
+            # an unanswered pair given different verdicts in one call: none is kept, and the model is asked to decide,
+            # with its own reasons. Once only: the second time, its finding counts over its pass
+            why = contradiction_why(entries)
+            run.contradicted.append(pair)
+            run.refused[pair] = why
+            refused.append((pair, why))
+            sent_back.add(pair)
+        elif any(entry.verdict == "pass" for entry in entries):
+            ignored.setdefault(pair[0], []).append(pair[1])
+    findings = [entry for entry in findings if (entry.item_id, entry.skill) not in sent_back
+                and not (entry.verdict == "pass" and entry.skill in ignored.get(entry.item_id, ()))]
+    off_skill = {}  # by item id: the skill of a fail or unsure this call gave it that the part doesn't ask
     for entry in findings:
         pair = (entry.item_id, entry.skill)
         if pair not in expected:
             if element_id(*pair) not in work.questions.elements:
                 run.invented += 1  # an item answered before, shown again for its page's outline, isn't
             not_asked[pair] = not_asked_why(run, work, toolkit, pair)
-        elif pair in run.needs_impact:
-            if entry.impact:
+            if entry.verdict != "pass":
+                off_skill.setdefault(entry.item_id, entry.skill)
+        elif pair in run.answers:
+            # the first answer recorded is final, whatever its verdict: a later, different one isn't taken, only
+            # said back, and listed in the run's record to be scored against the answer key
+            recorded = run.answers[pair].verdict
+            if entry.verdict != recorded:
+                run.already_answered.append((pair, recorded, entry.verdict))
+                already.append((pair, recorded, entry.verdict))
+            elif pair in run.needs_impact and entry.impact:
                 answer = run.answers[pair]
                 run.answers[pair] = answer.model_copy(update={
                     "impact": entry.impact, "suggested_fix": entry.suggested_fix or answer.suggested_fix})
                 run.needs_impact.remove(pair)
                 kept += 1
-        elif pair not in run.answers:
+        elif entry.verdict == "pass" and entry.item_id in off_skill:
+            # the fail may be meant for this skill under a wrong name, like soft-407 for soft-404: kept, the pass
+            # would be final, and the fixed fail sent next turned away. The findings come before the passes
+            why = (f"not recorded, since this call's {off_skill[entry.item_id]} finding for this item wasn't taken (see "
+                   "not_asked): if that finding was meant for this skill, give it again with this skill; if not, give "
+                   "this pass again")
+            run.refused[pair] = why
+            run.refusals += 1
+            refused.append((pair, why))
+        else:
             why = (f"load the {entry.skill} skill with load_skill first" if entry.skill not in run.skills_loaded
                    else entry.problem() or toolkit.refused(entry))
             if why:
@@ -382,7 +416,7 @@ def keep_findings(run, work, toolkit, findings):
                             run.expected.remove(later)
                             run.refused.pop(later, None)
                             run.dropped.append(later)
-    return kept, refused, list(not_asked.items())
+    return kept, refused, list(not_asked.items()), already, ignored
 
 async def run_batch(agent, work, skills, toolkit, run, batch):
     toolkit.start(run, batch, lambda findings: keep_findings(run, work, toolkit, findings))
