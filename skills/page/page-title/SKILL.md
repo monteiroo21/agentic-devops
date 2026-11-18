@@ -9,7 +9,7 @@ tools: [get_page_meta, get_headings, get_text_sample]
 
 ### When to look closer
 
-get_page_meta gives the page's title. Compare it with the page's first headings from get_headings. If they don't
+next_item gives the page's title (id title). Compare it with the page's first headings from get_headings. If they don't
 show what the page is about, read the start of its text with get_text_sample.
 
 ### How to judge

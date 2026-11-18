@@ -10,10 +10,11 @@ tools: [get_page_meta, get_text_sample]
 
 ### When to look closer
 
-get_page_meta gives the page's lang, as the item with the id "lang", and the parts of the page that have a lang of
-their own, each with an id like part-1. Read the page's text with get_text_sample to see what language it is in and
-to look for passages in another language. It returns the text a piece at a time: call it again with from_word to
-read further down the page, where quotes and reviews often are.
+next_item gives one item at a time: the page's lang, as the item with the id "lang", or a part of the page that has
+a lang of its own, with an id like part-1, its lang and the start of its text. get_page_meta lists the lang and all
+the parts at once. Read the page's text with get_text_sample to see what language it is in and to look for passages
+in another language. It returns the text a piece at a time: call it again with from_word to read further down the
+page, where quotes and reviews often are. What it returns stays in view for the next items.
 
 ### How to judge
 

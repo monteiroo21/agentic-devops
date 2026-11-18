@@ -9,7 +9,7 @@ tools: [get_rule_help, get_element_html, get_computed_styles]
 
 ### When to look closer
 
-The task gives each item's rule, its selector and axe-core's message, which often says why axe-core couldn't decide
+next_item gives the item's rule, its selector and axe-core's message, which often says why axe-core couldn't decide
 it, like a background image or another element on top of the text. Call get_rule_help for a rule you don't know.
 Call get_element_html when the message and the selector don't show what the element is, and get_computed_styles
 when its colours, font size and weight, size or visibility would decide it, or whether there is a background image

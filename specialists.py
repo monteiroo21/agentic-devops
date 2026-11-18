@@ -5,16 +5,17 @@ import re
 import time
 from argparse import Namespace
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic_ai import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart, UserPromptPart
 from agent import SkillTools, run_agent_async
 from analyzers.accessibility import AccessibilityAnalyzer
 from analyzers.links import LinkAnalyzer
 from common import CONFIG, IMPACTS, Impact, Verdict, read_skill, trace_to_logfire
-from toolkits import TOOLKITS, element_id
+from toolkits import TOOLKITS, element_id, filled
 from tools.axe import wcag_number
 from tools.links import remember_results
 from workflow import Questions
@@ -88,10 +89,10 @@ class RatedAgentFinding(AgentFinding):
         return self.verdict == "fail" and not self.impact
 
 class SubmitFindings(BaseModel):
-    """Finish the task, once record_findings shows nothing unanswered."""
+    """Finish the task, once next_item says every item is recorded."""
     model_config = ConfigDict(extra="forbid")
 
-ANSWERS = {"findings": AgentFinding, "rated-findings": RatedAgentFinding}  # what an agent's file can name: what record_findings takes
+ANSWERS = {"findings": AgentFinding, "rated-findings": RatedAgentFinding}  # what an agent's file can name: what record_answer takes
 
 @dataclass(frozen=True)
 class SkillFile:
@@ -141,20 +142,17 @@ class AgentFile:
     description: str  # what it does, in the orchestrator's list of agents
     skills: dict  # by name: its SkillFiles, in its file's order
     tools: tuple[str, ...]  # its tools' names, besides the ones every agent has: load_skill (and read_skill_file for
-    # a skill with files besides its examples), record_findings and submit_findings
-    max_steps: int  # its model calls in a run
+    max_steps: int  # its model calls in a run, besides FLEET.steps_per_answer for each answer it is asked for
     answer: str  # the findings it records, one of ANSWERS
-    prompt: str  # its system prompt, with {skills} where the skills of a task go, and {passes_example} an example of
-    # passes with them
+    prompt: str  # its system prompt, with {skills} where the skills of a task go
     toolkit: type  # what gives it its tools
 
     @property
     def finding(self):
-        return ANSWERS[self.answer]  # what record_findings takes
+        return ANSWERS[self.answer]  # what record_answer takes
 
-    def system_prompt(self, skills, passes_example):
-        return (self.prompt.replace("{skills}", "\n".join(skill.line() for skill in skills))
-                .replace("{passes_example}", passes_example))
+    def system_prompt(self, skills):
+        return self.prompt.replace("{skills}", "\n".join(skill.line() for skill in skills))
 
 def load_agent(path, skills_folder):
     front, prompt = read_skill(path)
@@ -184,7 +182,7 @@ def load_agent(path, skills_folder):
     if not isinstance(front["max_steps"], int) or front["max_steps"] < 2:
         problems.append("max_steps must be a number, at least 2: a tool call and the submission")
     problems += [f"its prompt doesn't mention {word}"
-                 for word in ("{skills}", "{passes_example}", "load_skill", "record_findings", "submit_findings")
+                 for word in ("{skills}", "load_skill", "next_item", "record_answer", "submit_findings")
                  if word not in prompt]
     unused = [tool for tool in tools if not any(tool in skill.tools for skill in skills.values())]
     if unused:
@@ -258,7 +256,7 @@ class Run:
     agent: str
     skills: list[str]
     url: str
-    batch: str | None = None  # like 2 of 3, when the task's items were split into runs
+    batch: str | None = None  # unused since a task is one run: kept for the reports' shape
     status: str = "checked"  # checked, nothing to check, nothing new, lands on another page, partly answered or failed
     lands_on: str | None = None
     error: str | None = None
@@ -268,10 +266,9 @@ class Run:
     answers: dict = field(default_factory=dict)  # by (item id, skill)
     first_missing: list | None = None  # the pairs its first submission had no accepted answer for
     refused: dict = field(default_factory=dict)  # by pair: why its latest answer wasn't accepted, until one is
-    needs_impact: list = field(default_factory=list)  # pairs whose fail was kept without its impact, until one is given
+    needs_impact: list = field(default_factory=list)  # pairs whose fail was kept without its impact
+    impact_refused: set = field(default_factory=set)  # pairs whose fail was sent back once for its impact
     already_answered: list = field(default_factory=list)  # (pair, recorded verdict, later verdict not taken)
-    contradicted: list = field(default_factory=list)  # pairs sent back once for different verdicts in one call
-    impact_asked: bool = False  # whether a submission was sent back for those impacts, which is done once
     refusals: int = 0  # answers not accepted, like a pass on a page whose destination it didn't read
     invented: int = 0  # answers for ids or skills its tools never showed
     tool_calls: Counter = field(default_factory=Counter)  # by tool
@@ -295,7 +292,6 @@ class Run:
             "no_impact": [f"{item_id} {skill}" for item_id, skill in self.needs_impact],
             "already_answered": [f"{item_id} {skill}: {recorded}, then {sent}"
                                  for (item_id, skill), recorded, sent in self.already_answered],
-            "contradictions": [f"{item_id} {skill}" for item_id, skill in self.contradicted],
             "omitted_first": len(self.first_missing or []), "refusals": self.refusals, "invented": self.invented,
             "tool_calls": dict(self.tool_calls), "destinations_read": self.read, "skills_loaded": self.skills_loaded,
             "skill_files_read": self.skill_files_read, **{key: self.usage[key] for key in USAGE},
@@ -313,161 +309,160 @@ def finding(run, work, pair, answer):
             "suggested_fix": getattr(answer, "suggested_fix", None)}
 
 CUT_OFF_MESSAGE = ("Your last reply was cut off at the output limit before it was complete, so none of it was taken. "
-                   "Send it again in smaller calls: at most 5 items per record_findings call.")
+                   "Send it again, shorter: one answer per record_answer call, with a reason of a few words.")
+PROGRESS = "Progress:"  # how the note that stands for the recorded items' messages starts
 
-def task_prompt(run, toolkit):
-    part = " Its items are split into parts: the tools show only this part's." if run.batch else ""
-    return f"Task {run.task}: check the page {run.url}.{part}{toolkit.task_text()}"
+def task_prompt(run):
+    return f"Task {run.task}: check the page {run.url}."
 
-def not_asked_why(run, work, toolkit, pair):
-    item_id, skill = pair
-    if item_id in toolkit.batch:
-        failed = [earlier for (answered, earlier), answer in run.answers.items()
-                  if answered == item_id and answer.verdict == "fail" and skill in toolkit.needless_after_fail(earlier)]
-        if pair in run.dropped and failed:
-            return f"{item_id} needs no {skill} answer after its {failed[0]} fail"
-        asked = [later for answered, later in run.expected if answered == item_id]
-        return (f"{item_id} isn't asked about {skill}" + (f"; it is asked about {', '.join(asked)}" if asked else ""))
-    if element_id(*pair) in work.questions.elements:
-        return f"{item_id} isn't asked in this part"  # in another part, or answered before
-    return f"there is no item {item_id} in this part"
+def keep_answer(run, work, toolkit, entry):
+    pair = item_id, skill = entry.item_id, entry.skill
+    current = toolkit.current
+    if item_id != current:
+        if element_id(*pair) not in work.questions.elements:
+            run.invented += 1
+        run.refusals += 1
+        return {"error": f"you are checking {current}: record its answers, then call next_item for the next item"}
+    needs = toolkit.still_needs(current)
+    if pair in run.answers:
+        recorded = run.answers[pair]
+        if entry.verdict != recorded.verdict:
+            run.already_answered.append((pair, recorded.verdict, entry.verdict))
+        elif pair in run.needs_impact and getattr(entry, "impact", None):
+            run.answers[pair] = recorded.model_copy(update={
+                "impact": entry.impact, "suggested_fix": entry.suggested_fix or recorded.suggested_fix})
+            run.needs_impact.remove(pair)
+            return filled({"recorded": f"the impact of {item_id}'s {skill} fail", "still_needs": needs or None})
+        return filled({"already_recorded": f"{item_id} {skill} is already recorded as {recorded.verdict}, which is "
+                                           "final", "still_needs": needs or None})
+    if pair not in run.expected:
+        run.refusals += 1
+        if pair in run.dropped:
+            return filled({"error": f"{item_id} needs no {skill} answer after its fail", "still_needs": needs or None})
+        return {"error": f"{item_id} isn't asked about {skill}; it still needs {', '.join(needs) or 'nothing'}"}
+    why = (f"load the {skill} skill with load_skill first" if skill not in run.skills_loaded
+           else entry.problem() or toolkit.refused(entry))
+    if not why and entry.missing_impact() and pair not in run.impact_refused:
+        run.impact_refused.add(pair)
+        why = ("a fail needs its impact: critical, serious, moderate or minor, as the skill's Impact says. Give it "
+               "again with its impact and suggested_fix")
+    if why:
+        run.refused[pair] = why
+        run.refusals += 1
+        return {"error": why, "still_needs": needs}
+    run.answers[pair] = entry.answer(element_id(*pair))
+    run.refused.pop(pair, None)
+    if entry.missing_impact():
+        run.needs_impact.append(pair)
+    result = {"recorded": f"{item_id} {skill}: {entry.verdict}"}
+    if entry.verdict == "fail":
+        dropped = [later for later in toolkit.needless_after_fail(skill)
+                   if (item_id, later) in run.expected and (item_id, later) not in run.answers]
+        for later in dropped:
+            run.expected.remove((item_id, later))
+            run.refused.pop((item_id, later), None)
+            run.dropped.append((item_id, later))
+        if dropped:
+            result["not_needed"] = f"after this fail, {item_id} needs no {', '.join(dropped)} answer"
+    needs = toolkit.still_needs(item_id)
+    result.update({"still_needs": needs} if needs else {"next": "call next_item for the next item"})
+    return result
 
-def contradiction_why(entries):
-    verdicts = [verdict for verdict in ("pass", "fail", "unsure") if any(entry.verdict == verdict for entry in entries)]
-    gave = " and ".join(f"{'an' if verdict == 'unsure' else 'a'} {verdict}" for verdict in verdicts)
-    said = [f'Your {entry.verdict} said "{entry.reason.strip()}".' for entry in entries
-            if entry.verdict != "pass" and entry.reason.strip()]
-    return " ".join([f"this call gave it {gave}, so none was recorded.", *said,
-                     "Decide which it is and give it once: in passes, or as a finding"])
+def tool_calls(message):
+    if not isinstance(message, ModelResponse):
+        return []
+    return [part for part in message.parts if isinstance(part, ToolCallPart)]
 
-def keep_findings(run, work, toolkit, findings):
-    expected = set(run.expected)
-    kept, refused, not_asked, already, ignored = 0, [], {}, [], {}
-    by_pair = {}
-    for entry in findings:
-        by_pair.setdefault((entry.item_id, entry.skill), []).append(entry)
-    sent_back = set()  # the pairs whose answers in this call are all left out
-    for pair, entries in by_pair.items():
-        if len({entry.verdict for entry in entries}) == 1:
-            continue
-        if pair in expected and pair not in run.answers and pair not in run.contradicted:
-            # an unanswered pair given different verdicts in one call: none is kept, and the model is asked to decide,
-            # with its own reasons. Once only: the second time, its finding counts over its pass
-            why = contradiction_why(entries)
-            run.contradicted.append(pair)
-            run.refused[pair] = why
-            refused.append((pair, why))
-            sent_back.add(pair)
-        elif any(entry.verdict == "pass" for entry in entries):
-            ignored.setdefault(pair[0], []).append(pair[1])
-    findings = [entry for entry in findings if (entry.item_id, entry.skill) not in sent_back
-                and not (entry.verdict == "pass" and entry.skill in ignored.get(entry.item_id, ()))]
-    off_skill = {}  # by item id: the skill of a fail or unsure this call gave it that the part doesn't ask
-    for entry in findings:
-        pair = (entry.item_id, entry.skill)
-        if pair not in expected:
-            if element_id(*pair) not in work.questions.elements:
-                run.invented += 1  # an item answered before, shown again for its page's outline, isn't
-            not_asked[pair] = not_asked_why(run, work, toolkit, pair)
-            if entry.verdict != "pass":
-                off_skill.setdefault(entry.item_id, entry.skill)
-        elif pair in run.answers:
-            # the first answer recorded is final, whatever its verdict: a later, different one isn't taken, only
-            # said back, and listed in the run's record to be scored against the answer key
-            recorded = run.answers[pair].verdict
-            if entry.verdict != recorded:
-                run.already_answered.append((pair, recorded, entry.verdict))
-                already.append((pair, recorded, entry.verdict))
-            elif pair in run.needs_impact and entry.impact:
-                answer = run.answers[pair]
-                run.answers[pair] = answer.model_copy(update={
-                    "impact": entry.impact, "suggested_fix": entry.suggested_fix or answer.suggested_fix})
-                run.needs_impact.remove(pair)
-                kept += 1
-        elif entry.verdict == "pass" and entry.item_id in off_skill:
-            # the fail may be meant for this skill under a wrong name, like soft-407 for soft-404: kept, the pass
-            # would be final, and the fixed fail sent next turned away. The findings come before the passes
-            why = (f"not recorded, since this call's {off_skill[entry.item_id]} finding for this item wasn't taken (see "
-                   "not_asked): if that finding was meant for this skill, give it again with this skill; if not, give "
-                   "this pass again")
-            run.refused[pair] = why
-            run.refusals += 1
-            refused.append((pair, why))
-        else:
-            why = (f"load the {entry.skill} skill with load_skill first" if entry.skill not in run.skills_loaded
-                   else entry.problem() or toolkit.refused(entry))
-            if why:
-                run.refused[pair] = why
-                run.refusals += 1
-                refused.append((pair, why))
+def gave_item(message, item_id):
+    # whether this request holds the next_item result that gave the item
+    return isinstance(message, ModelRequest) and any(
+        isinstance(part, ToolReturnPart) and part.tool_name == "next_item" and isinstance(part.content, dict)
+        and part.content.get("id") == item_id for part in message.parts)
+
+def is_progress(part):
+    return isinstance(part, UserPromptPart) and isinstance(part.content, str) and part.content.startswith(PROGRESS)
+
+def without_progress(messages):
+    kept = []
+    for message in messages:
+        if isinstance(message, ModelRequest) and any(is_progress(part) for part in message.parts):
+            parts = [part for part in message.parts if not is_progress(part)]
+            if not parts:
+                continue
+            message = replace(message, parts=parts)
+        kept.append(message)
+    return kept
+
+def recorded_items_out(toolkit, kept_tools):
+    def prune(messages):
+        handed = [index for index, message in enumerate(messages)
+                  if any(call.tool_name == "next_item" for call in tool_calls(message))]
+        if not handed:
+            return messages
+        start, end = handed[0], len(messages)
+        if toolkit.current is not None and toolkit.still_needs(toolkit.current):
+            end = next((index - 1 for index in range(len(messages) - 1, start, -1)
+                        if gave_item(messages[index], toolkit.current)), end)
+        if end <= start:
+            return messages
+        exchanges = []  # a model reply, with the results of the tools it called
+        for message in messages[start:end]:
+            if isinstance(message, ModelResponse) or not exchanges:
+                exchanges.append([])
+            exchanges[-1].append(message)
+        kept, removed = [], 0
+        for response, *requests in exchanges:
+            calls = tool_calls(response)
+            ids = {call.tool_call_id for call in calls if call.tool_name in kept_tools}
+            if not ids:
+                removed += 1 + len(requests)
+            elif len(ids) == len(calls):
+                kept += [response, *requests]
             else:
-                run.answers[pair] = entry.answer(element_id(*pair))
-                run.refused.pop(pair, None)
-                kept += 1
-                if entry.missing_impact():
-                    run.needs_impact.append(pair)
-                if entry.verdict == "fail":
-                    # a fail can make the item's other skills needless, like a link's redirect after its soft-404.
-                    # One already answered keeps its answer
-                    for skill in toolkit.needless_after_fail(entry.skill):
-                        later = (entry.item_id, skill)
-                        if later in expected and later not in run.answers:
-                            expected.discard(later)
-                            run.expected.remove(later)
-                            run.refused.pop(later, None)
-                            run.dropped.append(later)
-    return kept, refused, list(not_asked.items()), already, ignored
+                kept.append(replace(response, parts=[part for part in calls if part.tool_call_id in ids]))
+                kept += [replace(request, parts=parts) for request in requests
+                         if (parts := [part for part in request.parts if getattr(part, "tool_call_id", None) in ids])]
+                removed += 1
+        left = any(toolkit.still_needs(item_id) for item_id in toolkit.batch)
+        note = (f"{PROGRESS} {toolkit.recorded()} of {len(toolkit.batch)} items are recorded, and their messages "
+                "were removed." + ("" if end < len(messages) else " Call next_item for the next item." if left
+                                   else " Every item is recorded: call submit_findings."))
+        print(f"=====Removed {removed} message(s) of recorded items from the conversation=====")
+        return (without_progress(messages[:start]) + without_progress(kept)
+                + [ModelRequest(parts=[UserPromptPart(note)])] + messages[end:])
+    return prune
 
-async def run_batch(agent, work, skills, toolkit, run, batch):
-    toolkit.start(run, batch, lambda findings: keep_findings(run, work, toolkit, findings))
-    run.expected = [(item_id, skill) for item_id in batch for skill in toolkit.needs[item_id]]
+async def run_items(agent, work, skills, toolkit, run, items):
+    toolkit.start(run, items, lambda entry: keep_answer(run, work, toolkit, entry))
+    run.expected = [(item_id, skill) for item_id in items for skill in toolkit.needs[item_id]]
     skill_tools = SkillTools({skill.name: skill for skill in skills}, load_once=True, with_examples=True)
     run.skills_loaded, run.skill_files_read = skill_tools.loaded, skill_tools.files_read
 
     def review(submitted):
-        if toolkit.uncalled():
-            return ["no tool call"]
+        if not toolkit.handed:
+            return ["no item"]
         missing = run.unanswered()
         if run.first_missing is None:
             run.first_missing = missing
-        if run.needs_impact and not run.impact_asked:
-            run.impact_asked = True
-            missing = missing + [pair for pair in run.expected if pair in run.needs_impact]
         return missing
 
     def reject(missing):
-        uncalled = toolkit.uncalled()
-        if uncalled:
-            return (f"Not accepted: you haven't called {' and '.join(uncalled)} yet. Call it with {run.url}, check "
-                    "every item it lists, record your findings with record_findings, then call submit_findings.")
-        unanswered, refused, impacts = {}, [], {}
-        for item_id, skill in missing:
-            if (item_id, skill) in run.needs_impact:
-                impacts.setdefault(item_id, []).append(skill)
-            elif (item_id, skill) in run.refused:
-                refused.append(f"- {item_id} {skill}: {run.refused[(item_id, skill)]}")
-            else:
-                unanswered.setdefault(item_id, []).append(skill)
-        parts = ["Not accepted yet."]
-        if unanswered:
-            parts.append("These items have no finding for these skills: "
-                         + "; ".join(f"{item_id} ({', '.join(skills)})" for item_id, skills in unanswered.items())
-                         + ".")
-        if refused:
-            parts.append("These findings weren't accepted:\n" + "\n".join(refused) + "\n")
-        if impacts:
-            parts.append("These fails were recorded without their impact: "
-                         + "; ".join(f"{item_id} ({', '.join(skills)})" for item_id, skills in impacts.items())
-                         + '. Give each again as a finding, with its "impact".')
-        parts.append("The findings you gave for the others are kept, so don't send them again. Record these with "
-                     "record_findings, then call submit_findings.")
-        return " ".join(parts)
+        if not toolkit.handed:
+            return (f"Not accepted: you haven't checked any item yet. Call next_item with {run.url}, record an answer "
+                    "for each skill it needs with record_answer, and go on until next_item says every item is "
+                    "recorded. Then call submit_findings.")
+        left = len(dict.fromkeys(item_id for item_id, _ in missing))
+        return (f"Not accepted yet: {left} item(s) still need answers. Call next_item with {run.url} to go on, record "
+                "an answer for each skill with record_answer, and call submit_findings once next_item says every "
+                "item is recorded.")
 
+    kept_tools = {"load_skill", "read_skill_file", *toolkit.page_tools}
     submitted, usage = await run_agent_async(
-        work.analyzers["links"].args, agent.system_prompt(skills, toolkit.passes_example()), task_prompt(run, toolkit),
-        toolkit.offered_tools() + skill_tools.tools() + [toolkit.record_tool(agent.finding)], SubmitFindings, review,
-        reject, request_limit=agent.max_steps, output_name="submit_findings", text_submission=True,
-        cut_off_message=CUT_OFF_MESSAGE)
+        work.analyzers["links"].args, agent.system_prompt(skills), task_prompt(run),
+        toolkit.offered_tools() + skill_tools.tools() + [toolkit.next_item_tool(), toolkit.record_tool(agent.finding)],
+        SubmitFindings, review, reject, request_limit=agent.max_steps + FLEET.steps_per_answer * len(run.expected),
+        process_history=recorded_items_out(toolkit, kept_tools), output_name="submit_findings", text_submission=True,
+        cut_off_message=CUT_OFF_MESSAGE, max_rejections=CONFIG.agent.max_rejections + len(items) // 10)
     run.usage = usage
     if submitted is None:
         run.error = "it stopped before it handed in all its findings"
@@ -505,19 +500,12 @@ async def run_task(agent, work, skill_names, task_id):
         work.questions.record()
         return [new_run(status="nothing new" if toolkit.total else "nothing to check", known=toolkit.total,
                         collect_s=collect_s)]
-    size = FLEET.batch_size if toolkit.batched else len(ids)
-    batches = [ids[start:start + size] for start in range(0, len(ids), size)]
-    runs = []
-    for number, batch in enumerate(batches, 1):
-        run = new_run(batch=f"{number} of {len(batches)}" if len(batches) > 1 else None,
-                      known=toolkit.total - pairs if number == 1 else 0, collect_s=collect_s if number == 1 else 0.0)
-        print(f"\n====={agent.name} on {work.url}, task {task_id}" + (f", part {run.batch}" if run.batch else "")
-              + f": {len(batch)} item(s)=====")
-        await run_batch(agent, work, skills, toolkit, run, batch)
-        runs.append(run)
-    work.questions.forget({element_id(*pair) for run in runs for pair in run.dropped})
+    run = new_run(known=toolkit.total - pairs, collect_s=collect_s)
+    print(f"\n====={agent.name} on {work.url}, task {task_id}: {len(ids)} item(s)=====")
+    await run_items(agent, work, skills, toolkit, run, ids)
+    work.questions.forget({element_id(*pair) for pair in run.dropped})
     work.questions.record()
-    return runs
+    return [run]
 
 def task_status(runs):
     # how a task ended, over its runs

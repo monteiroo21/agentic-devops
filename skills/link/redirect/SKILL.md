@@ -4,12 +4,12 @@ description: Whether a link that was redirected still ends on the page it promis
   homepage or a sign-in page.
 category: links
 wcag: null
-tools: [list_links, get_destination_summary]
+tools: [get_destination_summary]
 ---
 
 ### When to look closer
 
-list_links gives each redirected link's final URL, and that often decides it: a final URL that is the site's root,
+next_item gives the redirected link's final URL, and that often decides it: a final URL that is the site's root,
 or a sign-in page, shows where the link ended. When the final URL doesn't show what the page is, read its title and
 heading with get_destination_summary.
 

@@ -1,4 +1,4 @@
-Examples from other sites, each with the image from list_images and, where it was needed, its context from
+Examples from other sites, each with the image from next_item and, where it was needed, its context from
 get_image_context:
 
 - {"filename": "DSC_0193.JPG", "alt": "DSC_0193.JPG", "in_link": false}

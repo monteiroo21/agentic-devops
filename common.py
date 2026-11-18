@@ -100,7 +100,7 @@ class FleetConfig(Section):
     max_requests: int  # the orchestrator's model calls in a run
     pages_per_call: int  # the most pages run_static_check takes at once
     tasks_per_call: int  # the most tasks delegate takes at once
-    batch_size: int  # the most links, images or axe-core items one agent run checks; a task with more has more runs
+    steps_per_answer: int  # an agent run's model calls per answer it is asked for, besides its file's max_steps
     max_output_tokens: int  # --max-output-tokens' default: the most tokens an agent may write per turn, thinking included
     timeout_s: float  # how long an agent's request may take before it is dropped; the run then fails, it isn't resent
     page_text_words: int  # how many words of the page's text get_text_sample returns per call

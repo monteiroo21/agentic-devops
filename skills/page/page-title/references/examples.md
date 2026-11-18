@@ -1,4 +1,4 @@
-Examples from other sites, each with the title from get_page_meta, the first headings from get_headings and the
+Examples from other sites, each with the title from next_item, the first headings from get_headings and the
 start of the text from get_text_sample:
 
 - {"title": "Opening hours | Riverside Library", "headings": ["Opening hours", "Holidays"], "text": "We are open Monday to Friday from 9:00 to 20:00."}

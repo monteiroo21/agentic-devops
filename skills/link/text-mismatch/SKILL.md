@@ -4,7 +4,7 @@ description: Whether each link leads to what its text says, by comparing its tex
   heading of the page it leads to.
 category: links
 wcag: null
-tools: [list_links, get_destination_summary]
+tools: [get_destination_summary]
 ---
 
 ### When to look closer

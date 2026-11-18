@@ -95,13 +95,14 @@ def run_agent(*args, **kwargs):
 
 async def run_agent_async(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(),
                           session=None, request_limit=CONFIG.agent.max_requests, process_history=None,
-                          output_name="submit_report", text_submission=False, cut_off_message=None):
+                          output_name="submit_report", text_submission=False, cut_off_message=None,
+                          max_rejections=CONFIG.agent.max_rejections):
     # cut_off_message: what the model is told when a reply is cut off at the output cap in the middle of a tool call,
     # to go on with the run. Without one, the run stops there
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
-    output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
+    output_retries = limits.max_text_replies + max_rejections + limits.max_invalid_reports
     usage = Counter()
 
     def from_text(text: str):
@@ -126,7 +127,7 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
     @agent.output_validator
     def check_report(report):
         unverified = review(report)
-        if not unverified or usage["rejected_submissions"] >= limits.max_rejections:
+        if not unverified or usage["rejected_submissions"] >= max_rejections:
             return report
         usage.update(rejected_submissions=1, unbacked_claims=len(unverified))
         print(f"=====Report rejected: {len(unverified)} unbacked item(s)=====")

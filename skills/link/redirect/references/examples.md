@@ -1,4 +1,4 @@
-Examples from other sites, each with the link from list_links and, where it was read, the title and heading of its
+Examples from other sites, each with the link from next_item and, where it was read, the title and heading of its
 destination from get_destination_summary:
 
 - {"text": "Opening hours", "url": "http://www.riversidelibrary.example/hours", "redirects": 1, "final_url": "https://www.riversidelibrary.example/visit/opening-hours", "title": "Opening hours | Riverside Library", "heading": "Opening hours"}

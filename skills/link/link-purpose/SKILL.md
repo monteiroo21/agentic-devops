@@ -5,16 +5,16 @@ description: Whether a user can tell where each link goes, from its text alone o
 category: accessibility
 wcag: "2.4.4"
 help_url: "https://www.w3.org/WAI/WCAG22/Understanding/link-purpose-in-context.html"
-tools: [list_links, get_link_context]
+tools: [get_link_context]
 ---
 
 ### When to look closer
 
-list_links gives each link's text, and its aria_label if it has one. A link whose text or aria_label names where it
-goes passes on its own, without its context. Call get_link_context for the others: links whose text is vague, like
-"read more", "here" or "details", links with no text, and links that share their text with another link that has a
-different URL. It returns the link's text and aria_label again, with its title, the text around it (context) and
-the heading of its section.
+next_item gives the link's text, and its aria_label if it has one, and lists under same_text the other links on the
+page that have the same text but a different URL. A link whose text or aria_label names where it goes passes on its
+own, without its context. Call get_link_context for the others: a link whose text is vague, like "read more", "here"
+or "details", a link with no text, and a link with a same_text list, with the ids in it too. It returns each link's
+text and aria_label again, with its title, the text around it (context) and the heading of its section.
 
 ### How to judge
 
@@ -38,9 +38,9 @@ judge whether the topic is explained there, or what happens after the click: whe
 redirects end and whether it matches the text are other skills' jobs. So a link's status, error, redirects and
 final_url never make it fail here, and its URL only shows which links with the same text lead to different places.
 
-Also look out for links with the same text that lead to different URLs. A user can't see the URLs before following
-the links. They fail if their context and headings don't tell them apart, and pass if each one's context or heading
-says which is which.
+Also look out for links with the same text that lead to different URLs, which next_item lists under same_text. A
+user can't see the URLs before following the links. They fail if their context and headings don't tell them apart,
+and pass if each one's context or heading says which is which.
 
 ### Impact
 

@@ -1,4 +1,4 @@
-Examples from other sites, each with the link from list_links and, where it was needed, its context from
+Examples from other sites, each with the link from next_item and, where it was needed, its context from
 get_link_context:
 
 - {"text": "Opening hours"}

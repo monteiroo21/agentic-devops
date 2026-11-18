@@ -10,10 +10,12 @@ tools: [get_headings]
 
 ### When to look closer
 
-get_headings returns every heading in page order, each with its level and the first words of the text under it
-(section_text), which is all this skill needs: compare each heading with its section_text and with the headings
-around it. A heading marked shared is in the part every page of the site shares, like its header or footer: judge
-its level against the other shared headings, not the page's own.
+next_item gives the heading to judge, with its level, its text and the first words of the text under it
+(section_text). Call get_headings once to see the headings around it: it returns every heading in page order, each
+with its level and section_text, and it stays in view for the next headings. Compare each heading with its
+section_text and with the headings around it. A heading marked shared is in the part every page of the site shares,
+like its header or footer: next_item gives it with the outline of the shared headings (shared_outline), so judge its
+level against those, not the page's own.
 
 ### How to judge
 

@@ -1,4 +1,4 @@
-Examples from other sites, each with the link from list_links and the title and heading of its destination from
+Examples from other sites, each with the link from next_item and the title and heading of its destination from
 get_destination_summary:
 
 - {"text": "Membership", "url": "https://www.riversidelibrary.example/join", "title": "Join the library | Riverside Library", "heading": "Become a member"}

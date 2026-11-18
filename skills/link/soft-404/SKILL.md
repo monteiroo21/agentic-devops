@@ -4,7 +4,7 @@ description: Whether a page that a link leads to is really an error page, even t
   working status.
 category: links
 wcag: null
-tools: [list_links, get_destination_summary]
+tools: [get_destination_summary]
 ---
 
 Judge soft-404 before a link's other skills. A link that fails it needs no redirect or text-mismatch answer.

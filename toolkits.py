@@ -1,8 +1,9 @@
-import json
+from typing import Literal
 from urllib.parse import unquote, urldefrag, urlsplit
+from pydantic import ValidationError
 from pydantic_ai import Tool
 from analyzers.links import leads_to_page, redirect_rule
-from common import CONFIG, docstring_with, with_ids, without
+from common import CONFIG, IMPACTS, docstring_with, with_ids, without
 from tools.axe import axe_selector, check_messages, wcag_tags
 from tools.links import check_url
 from tools.page_content import item_for_model
@@ -32,22 +33,26 @@ def same_page(url, other):
     return ((first.hostname, first.path.rstrip("/"), first.query)
             == (second.hostname, second.path.rstrip("/"), second.query))
 
+def same_text(text, other):
+    words = " ".join((text or "").split()).lower()
+    return bool(words) and words == " ".join((other or "").split()).lower()
+
 class Toolkit:
     tools_given = ()  # the tools it gives, as the agent's file names them
-    listing = ()  # the tools that list the items, which the agent must call before it hands in its findings
+    page_tools = ()  # its tools whose results are about the whole page, which stay in the conversation after an item
     checks = ("accessibility",)  # the analyzers it needs the page collected by
-    batched = True  # whether its items are split into runs of at most FLEET.batch_size
-    example_id = None  # an id like the ones its items have, for the example of passes
 
     def __init__(self, work, skills):
         self.work = work
         self.skills = {skill.name: skill for skill in skills}  # the skills the task loads
         self.order = []  # every item id, in page order
-        self.needs = {}  # by item id: the skills it still needs an answer for
+        self.needs = {}  # by item id: the skills it needs an answer for
         self.total = 0  # the (item, skill) pairs on the page, the ones answered on earlier pages included
         self.run = None
-        self.batch = []  # the ids of the items the current run checks
+        self.batch = []  # the ids of the items the run checks, in page order
         self.keep = None
+        self.current = None  # the item next_item gave last
+        self.handed = []  # the items next_item gave, in order
 
     @property
     def content(self):
@@ -86,18 +91,20 @@ class Toolkit:
     def items(self):
         raise NotImplementedError  # calls ask() for each skill
 
-    def left_out(self):
-        return len([item_id for item_id in self.order if item_id not in self.needs])
+    def row(self, item_id):
+        raise NotImplementedError  # what next_item shows of an item, with its id
 
-    def start(self, run, batch, keep):
-        self.run, self.batch, self.keep = run, batch, keep
+    def start(self, run, items, keep):
+        self.run, self.batch, self.keep = run, items, keep
+        self.current, self.handed = None, []
 
-    def uncalled(self):
-        # the tools that list the items, which the run hasn't called yet
-        return [tool for tool in self.listing if not self.run.tool_calls[tool]]
+    def still_needs(self, item_id):
+        # the skills the item is asked about that have no answer yet
+        return [skill for answered, skill in self.run.expected
+                if answered == item_id and (answered, skill) not in self.run.answers]
 
-    def task_text(self):
-        return ""  # what the task tells the agent besides the page, like the items it carries
+    def recorded(self):
+        return sum(not self.still_needs(item_id) for item_id in self.handed)
 
     def page_error(self, url, tool):
         if not same_page(url, self.run.url):
@@ -105,14 +112,17 @@ class Toolkit:
         self.run.tool_calls[tool] += 1
         return None
 
+    def lookable(self, item_id):
+        return item_id in self.batch  # the ids its tools look closer at
+
     def looked_up(self, ids, tool, show):
         self.run.tool_calls[tool] += 1
         results = []
         for item_id in dict.fromkeys(ids):
-            if item_id in self.batch:
+            if self.lookable(item_id):
                 results.append({"id": item_id, **show(item_id)})
             else:
-                results.append({"id": item_id, "error": "no item with this id was listed"})
+                results.append({"id": item_id, "error": "there is no item with this id on the page"})
         return results
 
     def refused(self, entry):
@@ -125,62 +135,83 @@ class Toolkit:
         raise NotImplementedError  # the tools its agent's file lists
 
     def offered_tools(self):
-        named = {tool for skill in self.skills.values() for tool in skill.tools} | set(self.listing)
+        named = {tool for skill in self.skills.values() for tool in skill.tools}
         return [tool for tool in self.tools() if tool.name in named]
 
-    def passes_example(self):
-        return json.dumps({self.example_id: list(self.skills)[:2]}, ensure_ascii=False)
-
-    def record_tool(self, finding):
-        @docstring_with(example=self.passes_example())
-        def record_findings(passes: dict[str, list[str]] = {},
-                            findings: list[finding] = []):  # pyright: ignore[reportInvalidTypeForm]
-            """Records your answers. Give the passes in passes, by item id, like {example}, with no reason, and only
-            each fail or unsure as a finding: one answer for each item and skill, never both a pass and a finding. An
-            answer it records is final, so don't send it again. Returns how many answers it recorded; the later answers
-            it didn't take because the item and skill already had a different answer recorded (already_answered), with
-            nothing to do about them; the ones it refused, with why, to give again fixed, like an item and skill given
-            two different answers in one call, of which it recorded none; the ones it didn't take because this part
-            doesn't ask them (not_asked), with why, so check their ids and skills against what the tools listed; the
-            items still without an answer (unanswered), each with the skills it still needs; the fails it recorded
-            without their impact (needs_impact), to give again with it; and the passes it ignored (ignored_passes),
-            since the same call also gave a finding for that item and skill, which counts instead. When nothing is
-            unanswered, call submit_findings.
+    def next_item_tool(self):
+        def next_item(url: str):
+            """Gives you the next item to check on the page: its id, what the tools know of it, and the skills it needs
+            an answer for. Call it again once record_answer has an answer for each of those skills. When every item is
+            recorded, it says so: then call submit_findings.
 
             Args:
-                passes: The skills each item passes, by the item's id.
-                findings: Only your fails and unsures, each for an item and a skill that the tools listed.
+                url: The URL of the page you were asked to check.
             """
-            uncalled = self.uncalled()
-            if uncalled:
-                return {"error": f"call {' and '.join(uncalled)} with {self.run.url} first: it lists the items to "
-                                 "check"}
-            self.run.tool_calls["record_findings"] += 1
-            passed = [(item_id, skill) for item_id, skills in passes.items() for skill in dict.fromkeys(skills)]
-            # the findings first, so that a fail drops the skills it makes needless before their passes are kept
-            kept, refused, not_asked, already, ignored = self.keep(
-                list(findings) + [finding(item_id=item_id, skill=skill, verdict="pass") for item_id, skill in passed])
-            unanswered, needs_impact = {}, {}
-            for item_id, skill in self.run.unanswered():
-                unanswered.setdefault(item_id, []).append(skill)
-            for item_id, skill in self.run.needs_impact:
-                needs_impact.setdefault(item_id, []).append(skill)
-            return filled({"recorded": kept,
-                           "already_answered": [{"id": item_id, "skill": skill, "recorded": recorded, "sent": sent}
-                                                for (item_id, skill), recorded, sent in already] or None,
-                           "refused": [{"id": item_id, "skill": skill, "why": why}
-                                       for (item_id, skill), why in refused] or None,
-                           "not_asked": [{"id": item_id, "skill": skill, "why": why}
-                                         for (item_id, skill), why in not_asked] or None,
-                           "unanswered": unanswered, "needs_impact": needs_impact or None,
-                           "ignored_passes": ignored or None})
-        return Tool(record_findings)
+            error = self.page_error(url, "next_item")
+            if error:
+                return error
+            needs = self.still_needs(self.current) if self.current is not None else []
+            if needs:
+                return {"error": f"{self.current} still needs an answer for {', '.join(needs)}: record it with "
+                                 "record_answer first"}
+            upcoming = [item_id for item_id in self.batch if item_id not in self.handed and self.still_needs(item_id)]
+            if not upcoming:
+                self.current = None
+                return {"done": "every item is recorded: call submit_findings"}
+            self.current = upcoming[0]
+            self.handed.append(self.current)
+            return {**self.row(self.current), "skills": self.still_needs(self.current)}
+        return Tool(next_item)
+
+    def record_tool(self, finding):
+        def record(answer):
+            self.run.tool_calls["record_answer"] += 1
+            if self.current is None:
+                return {"error": f"call next_item with {self.run.url} first: it gives you the item to check"}
+            try:
+                entry = finding.model_validate(answer)
+            except ValidationError as error:
+                return {"error": "; ".join(problem["msg"] for problem in error.errors())}
+            return self.keep(entry)
+
+        if "impact" not in finding.model_fields:
+            def record_answer(item_id: str, skill: str, reason: str, verdict: Literal["pass", "fail", "unsure"]):
+                """Records your answer for one skill of the item next_item gave you: first the reason, what decides
+                it in a few words, then the verdict. One call per skill the item needs. Returns what it recorded and
+                the skills the item still needs; when it needs none, call next_item.
+
+                Args:
+                    item_id: The id of the item next_item gave you, like link-3.
+                    skill: The skill this answer is for, as next_item listed it.
+                    reason: What decides it, in a few words.
+                    verdict: pass, fail or unsure.
+                """
+                return record({"item_id": item_id, "skill": skill, "reason": reason, "verdict": verdict})
+            return Tool(record_answer)
+
+        def record_answer(item_id: str, skill: str, reason: str, verdict: Literal["pass", "fail", "unsure"],
+                          impact: Literal[*IMPACTS, ""],  # pyright: ignore[reportInvalidTypeForm]
+                          suggested_fix: str = ""):
+            """Records your answer for one skill of the item next_item gave you: first the reason, what decides it in
+            a few words, then the verdict, then for a fail its impact and suggested_fix. One call per skill the item
+            needs. Returns what it recorded and the skills the item still needs; when it needs none, call next_item.
+
+            Args:
+                item_id: The id of the item next_item gave you, like link-3.
+                skill: The skill this answer is for, as next_item listed it.
+                reason: What decides it, in a few words.
+                verdict: pass, fail or unsure.
+                impact: For a fail: how much the problem hurts the site's visitors, as the skill's Impact says. Empty
+                    for a pass or an unsure.
+                suggested_fix: For a fail: how to fix it, in a few words. Empty for a pass or an unsure.
+            """
+            return record({"item_id": item_id, "skill": skill, "reason": reason, "verdict": verdict, "impact": impact,
+                           "suggested_fix": suggested_fix})
+        return Tool(record_answer)
 
 class LinkTools(Toolkit):
-    tools_given = ("list_links", "get_link_context", "get_destination_summary")
-    listing = ("list_links",)
+    tools_given = ("get_link_context", "get_destination_summary")
     checks = ("links", "accessibility")
-    example_id = "link-3"
 
     def __init__(self, work, skills):
         super().__init__(work, skills)
@@ -248,8 +279,16 @@ class LinkTools(Toolkit):
                 row["redirects"] = len(check["redirects"])
             if check["final_url"] and check["final_url"] != link["url"]:
                 row["final_url"] = check["final_url"]
-        row["skills"] = self.needs[item_id]
+        if "link-purpose" in self.needs[item_id]:
+            same = [{"id": other_id, "url": other["url"]} for other_id, other in self.links.items()
+                    if other_id != item_id and other["shown"] is not None and same_text(other["text"], link["text"])
+                    and url_key(other["url"]) != url_key(link["url"])]
+            if same:
+                row["same_text"] = same
         return row
+
+    def lookable(self, item_id):
+        return item_id in self.links
 
     def context(self, item_id):
         link = self.links[item_id]
@@ -266,8 +305,8 @@ class LinkTools(Toolkit):
         # each page these links lead to once, by the URL they ended on, with the ids and texts of the links to it
         pages, errors = {}, []
         for item_id in dict.fromkeys(ids):
-            if item_id not in self.batch:
-                errors.append({"id": item_id, "error": "no item with this id was listed"})
+            if not self.lookable(item_id):
+                errors.append({"id": item_id, "error": "there is no link with this id on the page"})
                 continue
             link = self.links[item_id]
             check = link["check"]
@@ -299,23 +338,8 @@ class LinkTools(Toolkit):
                    for earlier, later in NEEDLESS_AFTER_FAIL.items())
 
     def tools(self):
-        def list_links(url: str):
-            """Lists the links on the page to check, each with an id, its text, its aria_label if it has one, its
-            URL, the status its URL answered with, how many redirects it took and the URL it ended on, if it moved,
-            and the skills it needs an answer for. A link with no status couldn't be requested, or isn't a web
-            address, like an email link. Links already judged on other pages of the site are left out.
-
-            Args:
-                url: The URL of the page you were asked to check.
-            """
-            error = self.page_error(url, "list_links")
-            if error:
-                return error
-            return filled({"page": self.run.url, "links": [self.row(item_id) for item_id in self.batch],
-                           "already_judged_elsewhere": self.left_out() or None, "part": self.run.batch})
-
         def get_link_context(ids: list[str]):
-            """Returns the context of the links with these ids, as list_links listed them: each one's text and
+            """Returns the context of the links with these ids, as next_item gave them: each one's text and
             aria_label again, its title attribute, the text around it (context: the sentence, paragraph, list item or
             table cell it is in) and the heading of its section. Fields a link doesn't have are left out.
 
@@ -325,10 +349,10 @@ class LinkTools(Toolkit):
             return {"links": self.looked_up(ids, "get_link_context", self.context)}
 
         def get_destination_summary(ids: list[str]):
-            """Reads the pages that the links with these ids lead to, as list_links listed them. Returns each page
-            once, however many of the links lead to it: the URL the links ended on, its status, title, first heading,
-            first words (words) and how many words its main text has (word_count), and the ids and texts of the links
-            that lead to it.
+            """Reads the pages that the links with these ids lead to, as next_item gave them. Returns each page once,
+            however many of the links lead to it: the URL the links ended on, its status, title, first heading, first
+            words (words) and how many words its main text has (word_count), and the ids and texts of the links that
+            lead to it.
 
             Args:
                 ids: The ids of the links, like link-3.
@@ -336,21 +360,11 @@ class LinkTools(Toolkit):
             self.run.tool_calls["get_destination_summary"] += 1
             return self.destinations(ids)
 
-        return [Tool(list_links), Tool(get_link_context), Tool(get_destination_summary)]
+        return [Tool(get_link_context), Tool(get_destination_summary)]
 
 class PageTools(Toolkit):
     tools_given = ("get_page_meta", "get_headings", "get_text_sample")
-    batched = False
-    EXAMPLE_IDS = {"heading": "h-3", "page-title": "title", "page-language": "lang"}  # by skill: an id its items have
-
-    @property
-    def listing(self):
-        return ((("get_page_meta",) if {"page-title", "page-language"} & set(self.skills) else ())
-                + (("get_headings",) if "heading" in self.skills else ()))
-
-    def passes_example(self):
-        skill = next(iter(self.skills))
-        return json.dumps({self.EXAMPLE_IDS[skill]: [skill]}, ensure_ascii=False)
+    page_tools = tools_given
 
     def items(self):
         content = self.content
@@ -369,15 +383,31 @@ class PageTools(Toolkit):
                                         "outline": outline}, {"selector": heading["selector"]})
                              for item_id, heading in headings if heading.get("layout")])
         self.headings = headings
+        self.parts = dict(with_ids(content["parts"], "part"))
+        self.shared_outline = outline
+
+    def row(self, item_id):
+        content = self.content
+        if item_id == "title":
+            return {"id": "title", "title": content["title"]}
+        if item_id == "lang":
+            return filled({"id": "lang", "lang": content["lang"]})  # with no lang field, the page has none
+        if item_id in self.parts:
+            part = self.parts[item_id]
+            return {"id": item_id, "lang": part["lang"], "text": first_words(part["text"], FLEET.part_words)}
+        heading = dict(self.headings)[item_id]
+        shared = bool(heading.get("layout"))
+        return filled({"id": item_id, "level": heading["level"], "text": heading["text"],
+                       "section_text": first_words(heading.get("section_text"), FLEET.section_words),
+                       "shared": True if shared else None, "shared_outline": self.shared_outline if shared else None})
 
     def tools(self):
         content, words = self.content, FLEET.page_text_words
 
         def get_page_meta(url: str):
-            """Returns the page's items for the page-title and page-language skills, each with an id and its skill:
-            its title (id title), its lang attribute (id lang: with no lang field, the page has no lang attribute),
-            and the parts of the page that have a lang of their own, each with its lang and the start of its text
-            (ids like part-1).
+            """Returns the page's title (id title), its lang attribute (id lang: with no lang field, the page has no
+            lang attribute), and the parts of the page that have a lang of their own, each with its lang and the start
+            of its text (ids like part-1), all at once.
 
             Args:
                 url: The URL of the page you were asked to check.
@@ -387,12 +417,9 @@ class PageTools(Toolkit):
                 return error
             items = []
             if "page-title" in self.skills:
-                items.append({"id": "title", "skill": "page-title", "title": content["title"]})
+                items.append(self.row("title"))
             if "page-language" in self.skills:
-                items.append(filled({"id": "lang", "skill": "page-language", "lang": content["lang"]}))
-                items += [{"id": item_id, "skill": "page-language", "lang": part["lang"],
-                           "text": first_words(part["text"], FLEET.part_words)}
-                          for item_id, part in with_ids(content["parts"], "part")]
+                items += [self.row("lang")] + [self.row(item_id) for item_id in self.parts]
             return {"page": self.run.url, "items": items}
 
         def get_headings(url: str):
@@ -438,9 +465,7 @@ class PageTools(Toolkit):
         return [Tool(get_page_meta), Tool(get_headings), Tool(get_text_sample)]
 
 class ImageTools(Toolkit):
-    tools_given = ("list_images", "get_image_context")
-    listing = ("list_images",)
-    example_id = "img-3"
+    tools_given = ("get_image_context",)
 
     def items(self):
         self.images = dict(with_ids(self.content["images"], "img"))
@@ -468,23 +493,12 @@ class ImageTools(Toolkit):
         listed.pop("in_link")
         return {**listed, **context}
 
+    def lookable(self, item_id):
+        return item_id in self.images
+
     def tools(self):
-        def list_images(url: str):
-            """Lists the images on the page to check, each with an id, its file name, its alt text and whether it
-            is in a link (in_link). An image with no alt field has no alt attribute at all, while one with an empty
-            alt has alt="". Images already judged on other pages of the site are left out.
-
-            Args:
-                url: The URL of the page you were asked to check.
-            """
-            error = self.page_error(url, "list_images")
-            if error:
-                return error
-            return filled({"page": self.run.url, "images": [self.row(item_id) for item_id in self.batch],
-                           "already_judged_elsewhere": self.left_out() or None, "part": self.run.batch})
-
         def get_image_context(ids: list[str]):
-            """Returns the context of the images with these ids, as list_images listed them: each one's file name and
+            """Returns the context of the images with these ids, as next_item gave them: each one's file name and
             alt again (with no alt field, the image has no alt attribute), its caption, the text around it (context),
             the heading of its section and, for an image in a link, the link's text (link_text: empty when the image
             is all there is in the link) and the URL it leads to (link_url). Fields an image doesn't have are left
@@ -495,11 +509,11 @@ class ImageTools(Toolkit):
             """
             return {"images": self.looked_up(ids, "get_image_context", self.context)}
 
-        return [Tool(list_images), Tool(get_image_context)]
+        return [Tool(get_image_context)]
 
 class AxeReviewTools(Toolkit):
     tools_given = ("get_rule_help", "get_element_html", "get_computed_styles")
-    example_id = "review-3"
+    page_tools = ("get_rule_help",)
 
     def unavailable(self):
         if self.work.lands_on:
@@ -520,17 +534,19 @@ class AxeReviewTools(Toolkit):
               "help_url": rule.get("helpUrl")})
             for item_id, (rule, node) in self.nodes.items()])
 
-    def task_text(self):
-        items = [{"id": item_id, "rule": self.nodes[item_id][0]["id"], "selector": axe_selector(self.nodes[item_id][1]),
-                  "message": " ".join(check_messages(self.nodes[item_id][1]))} for item_id in self.batch]
-        return ("\n\nThe items axe-core couldn't decide:\n"
-                + "\n".join(json.dumps(item, ensure_ascii=False) for item in items))
+    def row(self, item_id):
+        rule, node = self.nodes[item_id]
+        return {"id": item_id, "rule": rule["id"], "selector": axe_selector(node),
+                "message": " ".join(check_messages(node))}
+
+    def lookable(self, item_id):
+        return item_id in self.nodes
 
     def tools(self):
         rules = {rule["id"]: rule for rule in self.axe["incomplete"]}
 
         def get_rule_help(rule: str):
-            """Returns axe-core's explanation of a rule, as the task names it: what the rule checks, and why it
+            """Returns axe-core's explanation of a rule, as next_item names it: what the rule checks, and why it
             matters.
 
             Args:
@@ -538,11 +554,11 @@ class AxeReviewTools(Toolkit):
             """
             self.run.tool_calls["get_rule_help"] += 1
             if rule not in rules:
-                return {"error": f"no item in the task has the rule {rule!r}; their rules are {', '.join(rules)}"}
+                return {"error": f"no item on the page has the rule {rule!r}; their rules are {', '.join(rules)}"}
             return {"rule": rule, "help": rules[rule]["help"], "description": rules[rule]["description"]}
 
         def get_element_html(ids: list[str]):
-            """Returns the HTML of the elements with these ids, as the task lists them.
+            """Returns the HTML of the elements with these ids, as next_item gave them.
 
             Args:
                 ids: The ids of the items, like review-3.
@@ -551,14 +567,14 @@ class AxeReviewTools(Toolkit):
                 "html": self.nodes[item_id][1]["html"][:ACCESSIBILITY.max_html_chars]})}
 
         async def get_computed_styles(ids: list[str]):
-            """Returns how the elements with these ids, as the task lists them, are shown on the page: their text
+            """Returns how the elements with these ids, as next_item gave them, are shown on the page: their text
             colour, the background colour behind them and whether there is a background image behind them, their
             font size and weight, opacity, visibility and display, and their width and height in pixels.
 
             Args:
                 ids: The ids of the items, like review-3.
             """
-            wanted = [item_id for item_id in dict.fromkeys(ids) if item_id in self.batch]
+            wanted = [item_id for item_id in dict.fromkeys(ids) if self.lookable(item_id)]
             selectors = {item_id: axe_selector(self.nodes[item_id][1]) for item_id in wanted}
             found = await computed_styles(self.run.url, list(dict.fromkeys(selectors.values()))) if wanted else None
 

@@ -4,18 +4,18 @@ description: Whether each image's alt text says what the image adds to the page.
 category: accessibility
 wcag: "1.1.1"
 help_url: "https://www.w3.org/WAI/WCAG22/Understanding/non-text-content.html"
-tools: [list_images, get_image_context]
+tools: [get_image_context]
 ---
 
 ### When to look closer
 
-list_images gives each image's file name, its alt and whether it is in a link (in_link). Some images can be decided
+next_item gives the image's file name, its alt and whether it is in a link (in_link). Some images can be decided
 from that alone: an alt that is a file name or a word like "image" fails, and so does an image with no alt field.
-Call get_image_context for the images that need more: every image in a link, since the link's text decides whether
-its alt should be empty or repeats it, every image with an empty alt that might carry information, and any image
-whose alt you can't judge without knowing what the page says around it. It returns the image's file name and alt
-again, with its caption, the text around it (context), the heading of its section and, for an image in a link, the
-link's text (link_text) and where it goes (link_url). Judge each image by its own alt, as that row gives it.
+Call get_image_context for an image that needs more: an image in a link, since the link's text decides whether its
+alt should be empty or repeats it, an image with an empty alt that might carry information, and an image whose alt
+you can't judge without knowing what the page says around it. It returns the image's file name and alt again, with
+its caption, the text around it (context), the heading of its section and, for an image in a link, the link's text
+(link_text) and where it goes (link_url). Judge each image by its own alt, as that row gives it.
 
 ### How to judge
 

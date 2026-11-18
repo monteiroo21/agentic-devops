@@ -1,4 +1,4 @@
-Examples from other sites, each with the link from list_links and its destination from get_destination_summary:
+Examples from other sites, each with the link from next_item and its destination from get_destination_summary:
 
 - link {"text": "Poetry night", "url": "https://www.riversidelibrary.example/events/poetry-night"}
   destination {"status": 200, "title": "Riverside Library", "heading": "Oops!", "words": "Oops! The page you were looking for has moved or never existed. Try the search box above.", "word_count": 16}

@@ -266,9 +266,8 @@ class Fleet(Orchestrator):
         checked on its own; partly answered, when it left some items unanswered; or failed, with the error. For a page
         it checked, returns how many items it judged, its verdicts by kind, the items it failed or was unsure about,
         each as [id, skill, verdict, its reason], with the impact it gave a fail, and the items and skills it left
-        unanswered. A page with many links or images is checked in parts, each a run of its own. A skill that already
-        ran on a page isn't run there again, unless its task failed or was partly answered: then it is only asked
-        about what is still unanswered.
+        unanswered. A skill that already ran on a page isn't run there again, unless its task failed or was partly
+        answered: then it is only asked about what is still unanswered.
 
         Args:
             tasks: The tasks to run.
