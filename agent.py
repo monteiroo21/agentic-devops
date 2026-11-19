@@ -14,21 +14,14 @@ from chat_backends import read_response
 from common import (CONFIG, make_parser, model_and_settings, model_name, parse_args, report_fields, report_path,
                     skill_files, skill_instructions, skills_prompt, trace_to_logfire)
 
-EXAMPLES = "references/examples.md"
-
 class SkillTools:
-    def __init__(self, skills, load_once=False, with_examples=False):
+    def __init__(self, skills):
         self.skills = skills
         self.loaded = []  # in the order the model first loaded them
         self.files_read = []  # as skill/path
-        self.load_once = load_once
-        self.with_examples = with_examples
 
     def no_skill(self, name):
         return {"error": f"there is no skill named {name!r}; the skills are {', '.join(self.skills)}"}
-
-    def files(self, skill):
-        return [path for path in skill_files(skill) if not (self.with_examples and path == EXAMPLES)]
 
     def load_skill(self, name: str):
         """Loads a skill's instructions, which say how to judge what the skill is for, with the files that come with
@@ -40,15 +33,10 @@ class SkillTools:
         skill = self.skills.get(name)
         if skill is None:
             return self.no_skill(name)
-        if self.load_once and name in self.loaded:
-            return {"name": name, "note": "already loaded: its instructions are earlier in this conversation"}
         if name not in self.loaded:
             self.loaded.append(name)
-        examples = skill.path.parent / EXAMPLES
-        files = self.files(skill)
-        return {"name": name, "instructions": skill_instructions(skill),
-                **({"examples": examples.read_text().strip()} if self.with_examples and examples.exists() else {}),
-                **({"files": files} if files else {})}
+        files = skill_files(skill)
+        return {"name": name, "instructions": skill_instructions(skill), **({"files": files} if files else {})}
 
     def read_skill_file(self, skill: str, path: str):
         """Reads one of the files that come with a skill, like its worked examples.
@@ -60,7 +48,7 @@ class SkillTools:
         found = self.skills.get(skill)
         if found is None:
             return self.no_skill(skill)
-        files = self.files(found)
+        files = skill_files(found)
         if path not in files:
             return {"error": f"the {skill} skill has no file {path!r}; its files are {', '.join(files) or 'none'}"}
         if f"{skill}/{path}" not in self.files_read:
@@ -68,14 +56,7 @@ class SkillTools:
         return {"skill": skill, "path": path, "content": (found.path.parent / path).read_text()}
 
     def tools(self):
-        if not self.with_examples:
-            return [Tool(self.load_skill), Tool(self.read_skill_file)]
-        reads_files = any(self.files(skill) for skill in self.skills.values())
-        description = ("Loads a skill's instructions, which say how to judge what the skill is for, and its worked "
-                       "examples, which show how typical cases are judged."
-                       + (" Its other files, if it has any, are listed under files, and read_skill_file reads them."
-                          if reads_files else ""))
-        return [Tool(self.load_skill, description=description)] + ([Tool(self.read_skill_file)] if reads_files else [])
+        return [Tool(self.load_skill), Tool(self.read_skill_file)]
 
 def printable(value):
     # an image a tool returns, like a screenshot, by its size rather than its bytes
@@ -95,9 +76,8 @@ def run_agent(*args, **kwargs):
 
 async def run_agent_async(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(),
                           session=None, request_limit=CONFIG.agent.max_requests, process_history=None,
-                          output_name="submit_report", text_submission=False, cut_off_message=None):
-    # cut_off_message: what the model is told when a reply is cut off at the output cap in the middle of a tool call,
-    # to go on with the run. Without one, the run stops there
+                          output_name="submit_report", text_submission=False, cut_off_message=None,
+                          read_reply=None, stuck=None):
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
@@ -105,6 +85,14 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
     usage = Counter()
 
     def from_text(text: str):
+        recorded = read_reply(text) if read_reply else None
+        if recorded is not None:
+            told, done = recorded
+            usage["replies_recorded"] += 1
+            print(f"=====Recorded the answers in {name}'s reply=====")
+            if not done:
+                raise ModelRetry(told)
+            print(f"{told}\n")
         if not submission.model_fields:
             submitted = submission()
         else:
@@ -190,6 +178,10 @@ async def run_agent_async(args, system_prompt, user_prompt, tools, submission, r
                         if not resumed:
                             show_request(node.request)
                         resumed = False
+                        why = stuck() if stuck else None
+                        if why:
+                            print(f"=====The run stopped: {why}=====")
+                            return None
                 return agent_run.result.output
 
     async def run():

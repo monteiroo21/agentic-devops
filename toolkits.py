@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 from urllib.parse import unquote, urldefrag, urlsplit
 from pydantic_ai import Tool
 from analyzers.links import leads_to_page, redirect_rule
@@ -12,6 +13,7 @@ FLEET = CONFIG.fleet
 ACCESSIBILITY = CONFIG.accessibility
 WEB = ("http", "https")
 NEEDLESS_AFTER_FAIL = {"soft-404": ("redirect", "text-mismatch"), "redirect": ("text-mismatch",)}
+NOT_WORKING = ("broken", "unreachable")
 
 def element_id(item_id, skill):
     return f"{skill}:{item_id}"
@@ -22,6 +24,12 @@ def first_words(text, count):
 
 def filled(entry):
     return {key: value for key, value in entry.items() if value is not None}
+
+def by_why(answers):
+    grouped = {}
+    for (item_id, skill), why in answers:
+        grouped.setdefault(why, {}).setdefault(item_id, []).append(skill)
+    return [{"why": why, "items": items} for why, items in grouped.items()] or None
 
 def url_key(url):
     parts = urlsplit(url)
@@ -37,7 +45,7 @@ class Toolkit:
     listing = ()  # the tools that list the items, which the agent must call before it hands in its findings
     checks = ("accessibility",)  # the analyzers it needs the page collected by
     batched = True  # whether its items are split into runs of at most FLEET.batch_size
-    example_id = None  # an id like the ones its items have, for the example of passes
+    example_ids = ()  # two ids like the ones its items have, for the example of answers
 
     def __init__(self, work, skills):
         self.work = work
@@ -91,6 +99,8 @@ class Toolkit:
 
     def start(self, run, batch, keep):
         self.run, self.batch, self.keep = run, batch, keep
+        self.last_given = None  # the answers of the part's last record_findings call or reply, as given
+        self.stuck = None  # why the part can't go on, once it can't
 
     def uncalled(self):
         # the tools that list the items, which the run hasn't called yet
@@ -128,59 +138,107 @@ class Toolkit:
         named = {tool for skill in self.skills.values() for tool in skill.tools} | set(self.listing)
         return [tool for tool in self.tools() if tool.name in named]
 
-    def passes_example(self):
-        return json.dumps({self.example_id: list(self.skills)[:2]}, ensure_ascii=False)
+    def example_pairs(self):
+        skills = list(self.skills)
+        if len(skills) > 1:
+            return [(self.example_ids[0], skill) for skill in skills[:2]]
+        return [(item_id, skills[0]) for item_id in self.example_ids]
+
+    def answers_example(self, finding):
+        answers = {}
+        for (item_id, skill), answer in zip(self.example_pairs(), ("pass", finding.FAIL_EXAMPLE)):
+            answers.setdefault(item_id, {})[skill] = answer
+        return json.dumps({"answers": answers}, ensure_ascii=False)
+
+    @staticmethod
+    def answer_type(finding):
+        return Literal["pass"] | finding.GIVEN
+
+    def record(self, finding, answers):
+        uncalled = self.uncalled()
+        if uncalled:
+            return {"error": f"call {' and '.join(uncalled)} with {self.run.url} first: it lists the items to check"}
+        example = self.answers_example(finding)
+        if not isinstance(answers, dict):
+            return {"error": f"give the answers by item id and then by skill, like {example}"}
+        given, not_by_skill = [], []
+        for item_id, by_skill in answers.items():
+            if isinstance(by_skill, dict):
+                given += [finding.from_given(item_id, skill, answer) for skill, answer in by_skill.items()]
+            else:
+                not_by_skill.append(item_id)
+        kept, refused, not_asked, changed = self.keep(given)
+        if kept == 0 and answers == self.last_given:
+            self.stuck = "it sent the same answers again, unchanged, and none of them could be recorded"
+        self.last_given = answers
+        unanswered, needs_impact = {}, {}
+        for item_id, skill in self.run.unanswered():
+            unanswered.setdefault(item_id, []).append(skill)
+        for item_id, skill in self.run.needs_impact:
+            needs_impact.setdefault(item_id, []).append(skill)
+        refused = by_why(refused)
+        if not_by_skill:
+            refused = (refused or []) + [{"why": f"give an item's answers by skill, like {example}",
+                                          "items": not_by_skill}]
+        return filled({"recorded": kept,
+                       "changed": [{"id": item_id, "skill": skill, "from": before, "to": after}
+                                   for (item_id, skill), before, after in changed] or None,
+                       "refused": refused, "not_asked": by_why(not_asked),
+                       "unanswered": unanswered, "needs_impact": needs_impact or None})
+
+    def record_reply(self, finding, text):
+        start = text.find("{")
+        if start < 0:
+            return None
+        try:
+            given, _ = json.JSONDecoder().raw_decode(text[start:])  # what follows it, like a brace too many, is left
+        except ValueError:
+            return None
+        if isinstance(given, dict) and set(given) == {"answers"}:
+            given = given["answers"]
+        if not (isinstance(given, dict) and given and all(isinstance(value, dict) for value in given.values())):
+            return None
+        return self.record(finding, given)
 
     def record_tool(self, finding):
-        @docstring_with(example=self.passes_example())
-        def record_findings(passes: dict[str, list[str]] = {},
-                            findings: list[finding] = []):  # pyright: ignore[reportInvalidTypeForm]
-            """Records your answers. Give the passes in passes, by item id, like {example}, with no reason, and only
-            each fail or unsure as a finding: one answer for each item and skill, never both a pass and a finding. An
-            answer it records is final, so don't send it again. Returns how many answers it recorded; the later answers
-            it didn't take because the item and skill already had a different answer recorded (already_answered), with
-            nothing to do about them; the ones it refused, with why, to give again fixed, like an item and skill given
-            two different answers in one call, of which it recorded none; the ones it didn't take because this part
-            doesn't ask them (not_asked), with why, so check their ids and skills against what the tools listed; the
-            items still without an answer (unanswered), each with the skills it still needs; the fails it recorded
-            without their impact (needs_impact), to give again with it; and the passes it ignored (ignored_passes),
-            since the same call also gave a finding for that item and skill, which counts instead. When nothing is
-            unanswered, call submit_findings.
+        answer_type = self.answer_type(finding)
+
+        @docstring_with(example=self.answers_example(finding), fail=finding.fail_example())
+        def record_findings(answers: dict[str, dict[str, answer_type]]):  # pyright: ignore[reportInvalidTypeForm]
+            """Records your answers, in answers by item id and then by skill, like {example}: "pass" for a pass,
+            and for a fail or an unsure an object with its reason, like {fail}. One answer for each item and skill. The
+            answers it records are kept, so don't send them again. Returns how many answers it recorded; the earlier
+            answers that a later fail replaced (changed); the ones it refused, by why, to give again fixed; the ones
+            it didn't take because this part doesn't ask them (not_asked), by why, so check their ids and skills
+            against what the tools listed; the items still without an answer (unanswered), each with the skills it
+            still needs; and the fails it recorded without their impact (needs_impact), to give again with it. When
+            nothing is unanswered, call submit_findings.
 
             Args:
-                passes: The skills each item passes, by the item's id.
-                findings: Only your fails and unsures, each for an item and a skill that the tools listed.
+                answers: By the item's id, its answer for each skill the tools listed for it.
             """
-            uncalled = self.uncalled()
-            if uncalled:
-                return {"error": f"call {' and '.join(uncalled)} with {self.run.url} first: it lists the items to "
-                                 "check"}
-            self.run.tool_calls["record_findings"] += 1
-            passed = [(item_id, skill) for item_id, skills in passes.items() for skill in dict.fromkeys(skills)]
-            # the findings first, so that a fail drops the skills it makes needless before their passes are kept
-            kept, refused, not_asked, already, ignored = self.keep(
-                list(findings) + [finding(item_id=item_id, skill=skill, verdict="pass") for item_id, skill in passed])
-            unanswered, needs_impact = {}, {}
-            for item_id, skill in self.run.unanswered():
-                unanswered.setdefault(item_id, []).append(skill)
-            for item_id, skill in self.run.needs_impact:
-                needs_impact.setdefault(item_id, []).append(skill)
-            return filled({"recorded": kept,
-                           "already_answered": [{"id": item_id, "skill": skill, "recorded": recorded, "sent": sent}
-                                                for (item_id, skill), recorded, sent in already] or None,
-                           "refused": [{"id": item_id, "skill": skill, "why": why}
-                                       for (item_id, skill), why in refused] or None,
-                           "not_asked": [{"id": item_id, "skill": skill, "why": why}
-                                         for (item_id, skill), why in not_asked] or None,
-                           "unanswered": unanswered, "needs_impact": needs_impact or None,
-                           "ignored_passes": ignored or None})
-        return Tool(record_findings)
+
+        def record_as_given(answers=None, **items):
+            if answers is None:
+                answers = items  # the items given without the answers argument around them
+            if isinstance(answers, str):
+                try:
+                    answers = json.loads(answers)  # the answers written as a string of JSON
+                except ValueError:
+                    pass
+            if not self.uncalled():
+                self.run.tool_calls["record_findings"] += 1
+            return self.record(finding, answers)
+
+        shown = Tool(record_findings).tool_def
+        return Tool.from_schema(record_as_given, name=shown.name, description=shown.description,
+                                json_schema=shown.parameters_json_schema)
 
 class LinkTools(Toolkit):
     tools_given = ("list_links", "get_link_context", "get_destination_summary")
     listing = ("list_links",)
     checks = ("links", "accessibility")
-    example_id = "link-3"
+    example_ids = ("link-3", "link-7")
 
     def __init__(self, work, skills):
         super().__init__(work, skills)
@@ -212,7 +270,7 @@ class LinkTools(Toolkit):
         purpose, redirects, soft_404s, mismatches = [], [], [], []
         for item_id, link in self.links.items():
             url, check, shown = link["url"], link["check"], link["shown"]
-            if shown is not None:
+            if shown is not None and not (check is not None and check["verdict"] in NOT_WORKING):
                 purpose.append((item_id, {**item_for_model(without(shown, "selector", "href"), "text"), "url": url},
                                 {"selector": shown["selector"], "url": url}))
             if check is None:
@@ -264,13 +322,17 @@ class LinkTools(Toolkit):
 
     def destinations(self, ids):
         # each page these links lead to once, by the URL they ended on, with the ids and texts of the links to it
-        pages, errors = {}, []
+        pages, files, errors = {}, [], []
         for item_id in dict.fromkeys(ids):
             if item_id not in self.batch:
                 errors.append({"id": item_id, "error": "no item with this id was listed"})
                 continue
             link = self.links[item_id]
             check = link["check"]
+            if check is not None and check["verdict"] in ("ok", "redirect") and not leads_to_page(
+                    {"tag": "a", "check": check}):
+                files.append({"id": item_id, "text": link["text"], "note": "it leads to a file, not a web page"})
+                continue
             if check is None or not leads_to_page({"tag": "a", "check": check}):
                 errors.append({"id": item_id, "text": link["text"], "error": "it doesn't lead to a web page that works"})
                 continue
@@ -282,7 +344,7 @@ class LinkTools(Toolkit):
                 **filled({key: check[key] for key in ("status", "title", "heading", "words", "word_count")}),
                 "links": []})
             page["links"].append({"id": item_id, "text": link["text"]})
-        return filled({"pages": list(pages.values()) or None, "errors": errors or None})
+        return filled({"pages": list(pages.values()) or None, "files": files or None, "errors": errors or None})
 
     def refused(self, entry):
         if entry.skill in ("soft-404", "text-mismatch") and entry.verdict != "unsure" and entry.item_id not in self.read:
@@ -341,16 +403,18 @@ class LinkTools(Toolkit):
 class PageTools(Toolkit):
     tools_given = ("get_page_meta", "get_headings", "get_text_sample")
     batched = False
-    EXAMPLE_IDS = {"heading": "h-3", "page-title": "title", "page-language": "lang"}  # by skill: an id its items have
+    EXAMPLE_IDS = {"heading": ("h-3", "h-4"), "page-title": ("title",), "page-language": ("lang",)}
 
     @property
     def listing(self):
         return ((("get_page_meta",) if {"page-title", "page-language"} & set(self.skills) else ())
                 + (("get_headings",) if "heading" in self.skills else ()))
 
-    def passes_example(self):
-        skill = next(iter(self.skills))
-        return json.dumps({self.EXAMPLE_IDS[skill]: [skill]}, ensure_ascii=False)
+    def example_pairs(self):
+        skills = list(self.skills)
+        if len(skills) > 1:
+            return [(self.EXAMPLE_IDS[skill][0], skill) for skill in skills[:2]]
+        return [(item_id, skills[0]) for item_id in self.EXAMPLE_IDS[skills[0]]]
 
     def items(self):
         content = self.content
@@ -440,7 +504,7 @@ class PageTools(Toolkit):
 class ImageTools(Toolkit):
     tools_given = ("list_images", "get_image_context")
     listing = ("list_images",)
-    example_id = "img-3"
+    example_ids = ("img-3", "img-7")
 
     def items(self):
         self.images = dict(with_ids(self.content["images"], "img"))
@@ -499,7 +563,7 @@ class ImageTools(Toolkit):
 
 class AxeReviewTools(Toolkit):
     tools_given = ("get_rule_help", "get_element_html", "get_computed_styles")
-    example_id = "review-3"
+    example_ids = ("review-3", "review-7")
 
     def unavailable(self):
         if self.work.lands_on:
