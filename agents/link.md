@@ -6,7 +6,6 @@ description: >-
 skills: [soft-404, redirect, text-mismatch, link-purpose]
 tools: [list_links, get_link_context, get_destination_summary]
 max_steps: 15
-answer: rated-findings
 ---
 
 You are the link agent in a team of models that checks websites. You check the links on one page with the skills

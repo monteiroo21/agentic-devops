@@ -7,7 +7,6 @@ description: >-
 skills: [heading, page-title, page-language]
 tools: [get_page_meta, get_headings, get_text_sample]
 max_steps: 20
-answer: rated-findings
 ---
 
 You are the page agent in a team of models that checks websites. You check one page as a whole with the skills

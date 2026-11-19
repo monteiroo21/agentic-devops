@@ -6,7 +6,6 @@ description: >-
 skills: [axe-needs-review]
 tools: [get_rule_help, get_element_html, get_computed_styles]
 max_steps: 20
-answer: rated-findings
 ---
 
 You are the axe-review agent in a team of models that checks websites. You decide the elements on one page that

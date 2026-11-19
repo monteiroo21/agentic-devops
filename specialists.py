@@ -40,6 +40,10 @@ class FindingAnswer(BaseModel):
     reason: str = Field(description="What decides it, in a few words: for a fail, the fact that shows the problem; for "
                                     "an unsure, what is missing to decide.")
     verdict: Literal["fail", "unsure"]
+    impact: Literal[*IMPACTS, ""] = Field(  # pyright: ignore[reportInvalidTypeForm]
+        description="For a fail: how much the problem hurts the site's visitors, as the skill's Impact says. Empty "
+                    "for an unsure.")
+    suggested_fix: str = Field("", description="For a fail: how to fix it, in a few words. Empty if you can't tell.")
 
     @model_validator(mode="before")
     @classmethod
@@ -49,12 +53,6 @@ class FindingAnswer(BaseModel):
             data = {key: "" if isinstance(value, str) and value.strip() in PLACEHOLDERS.values() else value
                     for key, value in data.items()}
         return data
-
-class RatedFindingAnswer(FindingAnswer):
-    impact: Literal[*IMPACTS, ""] = Field(  # pyright: ignore[reportInvalidTypeForm]
-        description="For a fail: how much the problem hurts the site's visitors, as the skill's Impact says. Empty "
-                    "for an unsure.")
-    suggested_fix: str = Field("", description="For a fail: how to fix it, in a few words. Empty if you can't tell.")
 
     @model_validator(mode="before")
     @classmethod
@@ -89,13 +87,16 @@ class RatedFindingAnswer(FindingAnswer):
 class AgentFinding(BaseModel):
     GIVEN: ClassVar = FindingAnswer  # what record_findings takes for a fail or an unsure
     # what a fail and an unsure look like, for the prompt and for a fail or unsure given as a bare word
-    FAIL_EXAMPLE: ClassVar = {"reason": PLACEHOLDERS["reason"], "verdict": "fail"}
+    FAIL_EXAMPLE: ClassVar = {"reason": PLACEHOLDERS["reason"], "verdict": "fail", "impact": PLACEHOLDERS["impact"],
+                              "suggested_fix": PLACEHOLDERS["suggested_fix"]}
     UNSURE_EXAMPLE: ClassVar = {"reason": PLACEHOLDERS["unsure_reason"], "verdict": "unsure"}
     item_id: str
     skill: str
     reason: str = ""
     verdict: Literal["pass", "fail", "unsure"]
     unreadable: str = ""  # why the answer as it was given couldn't be read, so it is refused
+    impact: Literal[*IMPACTS, ""] = ""  # pyright: ignore[reportInvalidTypeForm]
+    suggested_fix: str = ""
 
     @classmethod
     def fail_example(cls):
@@ -124,7 +125,10 @@ class AgentFinding(BaseModel):
                    unreadable=f'not an answer: give "pass", or for a fail an object like {cls.fail_example()}')
 
     def answer(self, element):
-        return Verdict(id=element, reason=self.reason, verdict=self.verdict)
+        failed = self.verdict == "fail"
+        return RatedVerdict(id=element, reason=self.reason, verdict=self.verdict,
+                            impact=(self.impact or None) if failed else None,
+                            suggested_fix=(self.suggested_fix or None) if failed else None)
 
     def problem(self):
         if self.unreadable:
@@ -138,29 +142,12 @@ class AgentFinding(BaseModel):
         return None
 
     def missing_impact(self):
-        return False  # whether it is a fail kept without the impact it needs, which a later finding can add
-
-class RatedAgentFinding(AgentFinding):
-    GIVEN: ClassVar = RatedFindingAnswer
-    FAIL_EXAMPLE: ClassVar = {**AgentFinding.FAIL_EXAMPLE, "impact": PLACEHOLDERS["impact"],
-                              "suggested_fix": PLACEHOLDERS["suggested_fix"]}
-    impact: Literal[*IMPACTS, ""] = ""  # pyright: ignore[reportInvalidTypeForm]
-    suggested_fix: str = ""
-
-    def answer(self, element):
-        failed = self.verdict == "fail"
-        return RatedVerdict(id=element, reason=self.reason, verdict=self.verdict,
-                            impact=(self.impact or None) if failed else None,
-                            suggested_fix=(self.suggested_fix or None) if failed else None)
-
-    def missing_impact(self):
+        # a fail kept without the impact it needs, which a later answer can add
         return self.verdict == "fail" and not self.impact
 
 class SubmitFindings(BaseModel):
     """Finish the task, once record_findings shows nothing unanswered."""
     model_config = ConfigDict(extra="forbid")
-
-ANSWERS = {"findings": AgentFinding, "rated-findings": RatedAgentFinding}  # what an agent's file can name
 
 @dataclass(frozen=True)
 class SkillFile:
@@ -218,22 +205,17 @@ class AgentFile:
     skills: dict  # by name: its SkillFiles, in its file's order
     tools: tuple[str, ...]  # its tools' names, besides the ones every agent has: record_findings and submit_findings
     max_steps: int  # its model calls in a run
-    answer: str  # the findings it records, one of ANSWERS
     prompt: str  # its system prompt, with {skills} where the skills of a task go, {answers_example} an example of
     # answers with them, and {fail_example} what a fail looks like
     toolkit: type  # what gives it its tools
 
-    @property
-    def finding(self):
-        return ANSWERS[self.answer]  # what record_findings takes
-
     def system_prompt(self, skills, answers_example):
         return (self.prompt.replace("{skills}", "\n\n".join(skill.section() for skill in skills))
-                .replace("{answers_example}", answers_example).replace("{fail_example}", self.finding.fail_example()))
+                .replace("{answers_example}", answers_example).replace("{fail_example}", AgentFinding.fail_example()))
 
 def load_agent(path, skills_folder):
     front, prompt = read_skill(path)
-    missing = [key for key in ("name", "description", "skills", "tools", "max_steps", "answer") if not front.get(key)]
+    missing = [key for key in ("name", "description", "skills", "tools", "max_steps") if not front.get(key)]
     if missing:
         raise ValueError(f"{path} has no {', '.join(missing)}")
     name, tools = front["name"], tuple(front["tools"])
@@ -258,8 +240,6 @@ def load_agent(path, skills_folder):
                         + ", ".join(TOOLKITS))
     elif set(toolkit.tools_given) != set(tools):
         problems.append(f"its toolkit gives {', '.join(toolkit.tools_given)}, but its file lists {', '.join(tools)}")
-    if front["answer"] not in ANSWERS:
-        problems.append(f"answer must be one of {', '.join(ANSWERS)}")
     if not isinstance(front["max_steps"], int) or front["max_steps"] < 2:
         problems.append("max_steps must be a number, at least 2: a tool call and the submission")
     problems += [f"its prompt doesn't mention {word}"
@@ -275,7 +255,7 @@ def load_agent(path, skills_folder):
     if problems:
         raise ValueError(f"{path}: " + "; ".join(problems))
     return AgentFile(path.stem, name, " ".join(front["description"].split()), skills, tools, front["max_steps"],
-                     front["answer"], prompt, toolkit)
+                     prompt, toolkit)
 
 def load_agents(folder, skills_folder, keys):
     # the agents the config lists, in its order, which is the order the orchestrator sees them in, by name
@@ -387,8 +367,8 @@ def finding(run, work, pair, answer):
     kept = work.questions.elements[element_id(item_id, skill)]
     return {"item_id": item_id, "skill": skill, "category": kept["category"],
             "wcag": [wcag_number(tag) for tag in kept.get("wcag") or [] if tag[4:].isdigit()], "page_url": run.url,
-            "reason": answer.reason, "verdict": answer.verdict, "impact": getattr(answer, "impact", None),
-            "suggested_fix": getattr(answer, "suggested_fix", None)}
+            "reason": answer.reason, "verdict": answer.verdict, "impact": answer.impact,
+            "suggested_fix": answer.suggested_fix}
 
 CUT_OFF_MESSAGE = ("Your last reply was cut off at the output limit before it was complete, so none of it was taken. "
                    "Send it again in smaller calls: at most 5 items per record_findings call.")
@@ -512,7 +492,7 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
         return " ".join(parts)
 
     def read_reply(text):
-        result = toolkit.record_reply(agent.finding, text)
+        result = toolkit.record_reply(AgentFinding, text)
         if result is None:
             return None
         told = (f"Your reply held answers, so they were recorded as if you had sent them to record_findings, which "
@@ -521,9 +501,9 @@ async def run_batch(agent, work, skills, toolkit, run, batch):
         return told, "error" not in result and not result["unanswered"]
 
     submitted, usage = await run_agent_async(
-        work.analyzers["links"].args, agent.system_prompt(skills, toolkit.answers_example(agent.finding)),
+        work.analyzers["links"].args, agent.system_prompt(skills, toolkit.answers_example(AgentFinding)),
         task_prompt(run, toolkit),
-        toolkit.offered_tools() + [toolkit.record_tool(agent.finding)], SubmitFindings, review,
+        toolkit.offered_tools() + [toolkit.record_tool(AgentFinding)], SubmitFindings, review,
         reject, request_limit=agent.max_steps, output_name="submit_findings", text_submission=True,
         cut_off_message=CUT_OFF_MESSAGE, read_reply=read_reply, stuck=lambda: toolkit.stuck)
     run.usage = usage

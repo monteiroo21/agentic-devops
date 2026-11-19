@@ -211,7 +211,7 @@ class Fleet(Orchestrator):
                 judged=sum(len(run.expected) for run in runs),
                 verdicts=dict(Counter(answer.verdict for _, answer in answers)),
                 problems=[[item_id, skill, answer.verdict, shortened(answer.reason, FLEET.max_reason_chars),
-                           *([answer.impact] if getattr(answer, "impact", None) else [])]
+                           *([answer.impact] if answer.impact else [])]
                           for (item_id, skill), answer in answers if answer.verdict != "pass"],
                 unanswered=[f"{item_id} {skill}" for run in runs for item_id, skill in run.unanswered()],
             )
