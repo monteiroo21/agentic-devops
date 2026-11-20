@@ -161,13 +161,22 @@ class Toolkit:
         example = self.answers_example(finding)
         if not isinstance(answers, dict):
             return {"error": f"give the answers by item id and then by skill, like {example}"}
-        given, not_by_skill = [], []
+        given, not_by_skill, skill_first = [], [], []
         for item_id, by_skill in answers.items():
-            if isinstance(by_skill, dict):
-                given += [finding.from_given(item_id, skill, answer) for skill, answer in by_skill.items()]
-            else:
+            if not isinstance(by_skill, dict):
                 not_by_skill.append(item_id)
+            elif item_id in self.skills and item_id not in self.batch:
+                # a skill where the item's id goes, with its items inside: on 11-20 qwen nested the headings under
+                # "heading", and sent them again unchanged when told only that "heading" was no item of the part
+                skill_first += [(inner_id, item_id) for inner_id in by_skill]
+            else:
+                given += [finding.from_given(item_id, skill, answer) for skill, answer in by_skill.items()]
         kept, refused, not_asked, changed = self.keep(given)
+        if skill_first:
+            self.run.refusals += len(skill_first)
+            item_id, skill = skill_first[0]
+            refused += [(pair, f"given by skill and then by item id: give the item's id first, then its skills, like "
+                               f"{json.dumps({item_id: {skill: 'pass'}})}") for pair in skill_first]
         if kept == 0 and answers == self.last_given:
             self.stuck = "it sent the same answers again, unchanged, and none of them could be recorded"
         self.last_given = answers

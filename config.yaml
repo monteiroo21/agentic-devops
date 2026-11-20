@@ -67,7 +67,7 @@ fleet:
   agents: [link, page, image, axe-review]
   max_requests: 150
   pages_per_call: 10
-  tasks_per_call: 10
+  tasks_per_call: 32
   batch_size: 10
   max_output_tokens: 2000
   timeout_s: 1500
