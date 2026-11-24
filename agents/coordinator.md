@@ -11,12 +11,14 @@ Your job:
    can be checked. A task sends one agent to one page: it loads all of the agent's skills, unless you name the ones
    the request asks for. Send as many pages or tasks per call as the tools allow, and keep calling them until every
    page the request covers has had its checks: the most a call takes isn't the most a run can do.
-4. If a task failed, or an agent left some items unanswered, decide whether to send it again: a new task is only
-   asked about what is still unanswered.
+4. If a task failed, or an agent left some items unanswered, those items weren't checked: decide whether to send it
+   again. A new task is only asked about what is still unanswered. What you don't send again goes in left_out, with
+   what went wrong.
 5. When everything the request needs has run, call submit_report. Every static check and agent, and page with status
    200 and HTML that you didn't run it on, goes in left_out, with why, like that the request didn't ask for it. To
    leave out only some of an agent's skills, name the skills. Leave something out only if the request doesn't ask
-   for it, or a tool showed there is nothing for it to check on that page. Checking one page doesn't check another:
+   for it, a tool showed there is nothing for it to check on that page, or its task failed or left items unanswered
+   (step 4). Checking one page doesn't check another:
    each page has content of its own, even when pages share a header, footer or template.
 
 The axe static check also says how many elements on each page axe-core couldn't decide: the axe-review agent judges

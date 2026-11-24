@@ -25,6 +25,17 @@ def first_words(text, count):
 def filled(entry):
     return {key: value for key, value in entry.items() if value is not None}
 
+def merged(*parts):
+    # the answers of several dicts in one, those given under the same key in both put together
+    answers = {}
+    for part in parts:
+        for key, value in part.items():
+            if isinstance(value, dict) and isinstance(answers.get(key), dict):
+                answers[key] = {**answers[key], **value}
+            else:
+                answers[key] = value
+    return answers
+
 def by_why(answers):
     grouped = {}
     for (item_id, skill), why in answers:
@@ -161,22 +172,18 @@ class Toolkit:
         example = self.answers_example(finding)
         if not isinstance(answers, dict):
             return {"error": f"give the answers by item id and then by skill, like {example}"}
-        given, not_by_skill, skill_first = [], [], []
+        triples, not_by_skill = [], []
         for item_id, by_skill in answers.items():
             if not isinstance(by_skill, dict):
                 not_by_skill.append(item_id)
             elif item_id in self.skills and item_id not in self.batch:
-                # a skill where the item's id goes, with its items inside: on 11-20 qwen nested the headings under
-                # "heading", and sent them again unchanged when told only that "heading" was no item of the part
-                skill_first += [(inner_id, item_id) for inner_id in by_skill]
+                self.run.skill_first += len(by_skill)
+                triples += [(inner_id, item_id, answer) for inner_id, answer in by_skill.items()]
             else:
-                given += [finding.from_given(item_id, skill, answer) for skill, answer in by_skill.items()]
+                triples += [(item_id, skill, answer) for skill, answer in by_skill.items()]
+        given = [finding.from_given(item_id, skill, answer)
+                 for triple in triples for item_id, skill, answer in self.unnested(*triple)]
         kept, refused, not_asked, changed = self.keep(given)
-        if skill_first:
-            self.run.refusals += len(skill_first)
-            item_id, skill = skill_first[0]
-            refused += [(pair, f"given by skill and then by item id: give the item's id first, then its skills, like "
-                               f"{json.dumps({item_id: {skill: 'pass'}})}") for pair in skill_first]
         if kept == 0 and answers == self.last_given:
             self.stuck = "it sent the same answers again, unchanged, and none of them could be recorded"
         self.last_given = answers
@@ -195,6 +202,18 @@ class Toolkit:
                        "refused": refused, "not_asked": by_why(not_asked),
                        "unanswered": unanswered, "needs_impact": needs_impact or None})
 
+    def unnested(self, item_id, skill, answer):
+        if not isinstance(answer, dict):
+            return [(item_id, skill, answer)]
+        inner = {key: value for key, value in answer.items() if key in self.skills and key != skill}
+        if not inner:
+            return [(item_id, skill, answer)]
+        self.run.nested += len(inner)
+        found = [(item_id, skill, {key: value for key, value in answer.items() if key not in inner})]
+        for inner_skill, value in inner.items():
+            found += self.unnested(item_id, inner_skill, value)
+        return found
+
     def record_reply(self, finding, text):
         start = text.find("{")
         if start < 0:
@@ -203,8 +222,8 @@ class Toolkit:
             given, _ = json.JSONDecoder().raw_decode(text[start:])  # what follows it, like a brace too many, is left
         except ValueError:
             return None
-        if isinstance(given, dict) and set(given) == {"answers"}:
-            given = given["answers"]
+        if isinstance(given, dict) and isinstance(given.get("answers"), dict):
+            given = merged(given.pop("answers"), given)
         if not (isinstance(given, dict) and given and all(isinstance(value, dict) for value in given.values())):
             return None
         return self.record(finding, given)
@@ -228,13 +247,15 @@ class Toolkit:
             """
 
         def record_as_given(answers=None, **items):
-            if answers is None:
-                answers = items  # the items given without the answers argument around them
             if isinstance(answers, str):
                 try:
                     answers = json.loads(answers)  # the answers written as a string of JSON
                 except ValueError:
                     pass
+            if answers is None:
+                answers = items  # the items given without the answers argument around them
+            elif isinstance(answers, dict) and items:
+                answers = merged(answers, items)  # some items given beside the answers argument
             if not self.uncalled():
                 self.run.tool_calls["record_findings"] += 1
             return self.record(finding, answers)

@@ -19,6 +19,11 @@ from workflow import Questions, page_report
 FLEET = CONFIG.fleet
 ACCESSIBILITY = CONFIG.accessibility
 RAN = ("checked", "nothing to check", "nothing new", "lands on another page")  # a run that needn't be repeated
+MISSING_HEADINGS = {  # by how the latest run ended, what submit_report's rejection says of what wasn't accounted for
+    None: "These static checks and agents haven't run on these pages",
+    "partly answered": "These agents left some items unanswered on these pages",
+    "failed": "These static checks and agents failed on these pages",
+}
 LINK_PROBLEMS = ("broken", "unreachable", "blocked")  # what the link checker reports a link as that is a problem
 DEFAULT_REQUEST = "Check the links and the accessibility of the site."
 # a link one skill failed isn't reported again by a later one, as when they ran one after the other on a page
@@ -54,7 +59,7 @@ class LeftOut(BaseModel):
                                   'every one.')
     pages: list[str] = Field(description='The ids of the pages you didn\'t run it on, like p3, or ["all"] for every '
                                          'page with status 200 and HTML.')
-    reason: str = Field(description="Why you didn't run it.")
+    reason: str = Field(description="Why you didn't run it, or didn't send it again.")
 
 class SubmitReport(BaseModel):
     narrative: str = Field(
@@ -62,7 +67,8 @@ class SubmitReport(BaseModel):
                     "first, and of what wasn't checked and why. Only mention what the tools showed you.")
     left_out: list[LeftOut] = Field(
         [], description="Every static check, agent or skill, and page with status 200 and HTML that you didn't run it "
-                        "on, with why. Empty if there are none.")
+                        "on, or that failed or left items unanswered there and you didn't send again, with why. Empty "
+                        "if there are none.")
 
 class FleetReport(SiteReport):
     mode: str = "fleet"
@@ -308,37 +314,45 @@ class Fleet(Orchestrator):
         return pairs
 
     def accounted_for(self, unit, page_id, left_out):
-        return ((unit, page_id) in self.status or (unit, page_id) in left_out
+        return (self.status.get((unit, page_id)) in RAN or (unit, page_id) in left_out
                 or (UNITS[unit] == "accessibility" and page_id in self.lands_on))
 
     def missing(self, report):
         if self.crawl is None:
-            return [{"name": "crawl_site", "pages": []}]
+            return [{"name": "crawl_site", "pages": [], "ended": None}]
         left_out = self.left_out_pairs(report)
         missing = []
         for name in STATIC_CHECKS:
-            pages = [page_id for page_id in self.to_analyze() if not self.accounted_for(name, page_id, left_out)]
-            if pages:
-                missing.append({"name": name, "pages": pages})
+            by_end = {}
+            for page_id in self.to_analyze():
+                if not self.accounted_for(name, page_id, left_out):
+                    by_end.setdefault(self.status.get((name, page_id)), []).append(page_id)
+            missing += [{"name": name, "pages": pages, "ended": ended} for ended, pages in by_end.items()]
         for agent in AGENTS.values():
             by_name = {}
             for page_id in self.to_analyze():
-                skills = [skill for skill in agent.skills if not self.accounted_for(skill, page_id, left_out)]
-                if skills:
+                by_end = {}
+                for skill in agent.skills:
+                    if not self.accounted_for(skill, page_id, left_out):
+                        by_end.setdefault(self.status.get((skill, page_id)), []).append(skill)
+                for ended, skills in by_end.items():
                     name = agent.name if len(skills) == len(agent.skills) else f"{agent.name} ({', '.join(skills)})"
-                    by_name.setdefault(name, []).append(page_id)
-            missing += [{"name": name, "pages": pages} for name, pages in by_name.items()]
+                    by_name.setdefault((name, ended), []).append(page_id)
+            missing += [{"name": name, "pages": pages, "ended": ended} for (name, ended), pages in by_name.items()]
         return missing
 
     def reject(self, missing):
         if missing[0]["name"] == "crawl_site":
             return "Report not accepted: call crawl_site first, and check the pages the request asks for."
         listed = missing[:FLEET.max_missing_listed]
-        lines = [f"- {entry['name']}: {', '.join(entry['pages'])}" for entry in listed]
-        return ("Report not accepted. These static checks and agents haven't run on these pages, and they aren't in "
-                "left_out:\n" + "\n".join(lines)
-                + "\nRun them with run_static_check or delegate, or put them in left_out with why. Then call "
-                  "submit_report again.")
+        groups = []
+        for ended, heading in MISSING_HEADINGS.items():
+            lines = [f"- {entry['name']}: {', '.join(entry['pages'])}" for entry in listed if entry["ended"] == ended]
+            if lines:
+                groups.append(f"{heading}, and they aren't in left_out:\n" + "\n".join(lines))
+        return ("Report not accepted. " + "\n".join(groups)
+                + "\nRun them with run_static_check or delegate (a task sent again is only asked about what is still "
+                  "unanswered), or put them in left_out with why. Then call submit_report again.")
 
     # Report
 

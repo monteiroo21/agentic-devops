@@ -333,6 +333,8 @@ class Run:
     impact_asked: bool = False  # whether a submission was sent back for those impacts, which is done once
     refusals: int = 0  # answers not accepted, like a pass on a page whose destination it didn't read
     invented: int = 0  # answers for ids or skills its tools never showed
+    skill_first: int = 0  # answers given by skill and then by item id, which were read the other way round
+    nested: int = 0  # answers given inside the same item's answer for another skill, which were taken out of it
     tool_calls: Counter = field(default_factory=Counter)  # by tool
     read: list[str] = field(default_factory=list)  # the items whose linked page it read
     findings: list[dict] = field(default_factory=list)  # its accepted answers, with what the code adds to them
@@ -355,7 +357,7 @@ class Run:
             "not_replaced": [f"{item_id} {skill}: {recorded}, then {sent}"
                              for (item_id, skill), recorded, sent in self.not_replaced],
             "omitted_first": len(self.first_missing or []), "refusals": self.refusals, "invented": self.invented,
-            "tool_calls": dict(self.tool_calls), "destinations_read": self.read,
+            "skill_first": self.skill_first, "nested": self.nested, "tool_calls": dict(self.tool_calls), "destinations_read": self.read,
             **{key: self.usage[key] for key in USAGE},
             "model_s": round(self.usage["model_s"], 1), "collect_s": round(self.collect_s, 1),
             "findings": self.findings,

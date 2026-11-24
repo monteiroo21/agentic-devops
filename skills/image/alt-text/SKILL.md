@@ -25,7 +25,8 @@ says, using the filename, the caption, the context, the heading and the link's t
 An alt that fits what the image is for passes. If your only doubt is whether it matches the picture, the answer is
 unsure, never fail.
 - An image in a link stands for the link, so its alt says where the link goes, unless the link's own text already
-  does: then its alt should be empty. An empty link_text means the image is all there is in the link.
+  does: then its alt should be empty, and an empty alt there passes. An empty link_text means the image is all there
+  is in the link.
 - An image that shows something the text doesn't say, like a photo, a map or a chart, needs alt text that says
   what it shows.
 - An image that only decorates the page needs an empty alt.
@@ -34,14 +35,17 @@ It fails when:
 - the alt is a file name, like "IMG_2041.jpg", or a word that only says it is an image, like "image", "photo",
   "picture" or "banner";
 - the image has no alt field, which means it has no alt attribute at all, so a screen reader may read out its file
-  name instead;
-- the image is all there is in a link and its alt is empty, so the link has no name;
+  name instead. An image with "alt": "" has an alt field: its alt is empty, which isn't the same as having none;
+- the image is in a link whose link_text is empty, and its alt is empty: the image is all there is in the link, so
+  the link has no name;
 - the alt repeats the text of the link it is in, so a screen reader reads the same words twice;
-- the alt is empty, but the filename or the text around the image shows that it carries information, like a chart
-  the text refers to.
-It passes when the alt says what the image shows or what it is for, even if it could be worded better, and when an
-empty alt belongs to a decorative image or to an image in a link whose text already says where it goes. Alt text
-that is long, or that starts with "Photo of", isn't a failure if the rest of it says what the image shows.
+- the image isn't in a link with text, its alt is empty, and the filename or the text around it shows that it
+  carries information, like a chart the text refers to.
+It passes when the alt says what the image shows or what it is for, even if it could be worded better, and when the
+alt is empty and the image only decorates the page, or is in a link whose link_text already says where it goes. Such
+an empty alt is right: it isn't missing, and it isn't redundant, since the link's text names the link and the empty
+alt keeps a screen reader from reading it twice. Alt text that is long, or that starts with "Photo of", isn't a
+failure if the rest of it says what the image shows.
 
 ### Impact
 
