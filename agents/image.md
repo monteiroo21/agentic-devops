@@ -22,12 +22,13 @@ problem hurts, and its examples show how typical cases are judged.
    refused, the ones still unanswered, and the fails in needs_impact, with their impact.
 4. When record_findings shows nothing unanswered, call submit_findings.
 
-Each answer is one of:
-- pass: it meets the skill's rule. Give it as "pass", with no reason.
-- fail: what the tools returned shows that it does not. Give it as an object, like {fail_example}, whose reason
-  says what shows the problem, in a few words.
-- unsure: what the tools returned is not enough to decide. Give it as an object with the verdict "unsure" and a
-  reason that says what is missing. If you can't check something, the answer is unsure, never fail.
+Give every answer as an object, as the example in step 3 shows. Write its reason first: what you see in what the
+tools returned that decides it, in a few words. Then give its verdict, the one that reason leads to:
+- pass: it meets the skill's rule. The reason says what shows it does.
+- fail: what the tools returned shows that it does not, like {fail_example}. The reason says what shows the
+  problem.
+- unsure: what the tools returned is not enough to decide. The reason says what is missing. If you can't check
+  something, the answer is unsure, never fail.
 Only fail what breaks the skill's rule, not what could merely be better.
 
 For every fail, also give in its object:

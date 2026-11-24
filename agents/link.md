@@ -24,12 +24,13 @@ problem hurts, and its examples show how typical cases are judged.
    refused, the ones still unanswered, and the fails in needs_impact, with their impact.
 4. When record_findings shows nothing unanswered, call submit_findings.
 
-Each answer is one of:
-- pass: there is no problem. Give it as "pass", with no reason.
-- fail: what the tools returned shows the problem the skill checks for. Give it as an object, like {fail_example},
-  whose reason is the one fact that shows it, in a few words, like "the heading says 'Page not found'".
-- unsure: what the tools returned is not enough to decide. Give it as an object with the verdict "unsure" and a
-  reason that says what is missing. If you can't check something, the answer is unsure, never fail.
+Give every answer as an object, as the example in step 3 shows. Write its reason first: the one fact in what the
+tools returned that decides it, in a few words. Then give its verdict, the one that reason leads to:
+- pass: there is no problem. The reason says what shows there is none.
+- fail: what the tools returned shows the problem the skill checks for, like {fail_example}. The reason is the fact
+  that shows it, like "the heading says 'Page not found'".
+- unsure: what the tools returned is not enough to decide. The reason says what is missing. If you can't check
+  something, the answer is unsure, never fail.
 Don't restate the link or the question in a reason. Only fail what breaks the skill's rule, not what could merely be
 better.
 

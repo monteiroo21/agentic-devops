@@ -1,5 +1,4 @@
 import json
-from typing import Literal
 from urllib.parse import unquote, urldefrag, urlsplit
 from pydantic_ai import Tool
 from analyzers.links import leads_to_page, redirect_rule
@@ -157,13 +156,9 @@ class Toolkit:
 
     def answers_example(self, finding):
         answers = {}
-        for (item_id, skill), answer in zip(self.example_pairs(), ("pass", finding.FAIL_EXAMPLE)):
+        for (item_id, skill), answer in zip(self.example_pairs(), (finding.PASS_EXAMPLE, finding.FAIL_EXAMPLE)):
             answers.setdefault(item_id, {})[skill] = answer
         return json.dumps({"answers": answers}, ensure_ascii=False)
-
-    @staticmethod
-    def answer_type(finding):
-        return Literal["pass"] | finding.GIVEN
 
     def record(self, finding, answers):
         uncalled = self.uncalled()
@@ -172,17 +167,8 @@ class Toolkit:
         example = self.answers_example(finding)
         if not isinstance(answers, dict):
             return {"error": f"give the answers by item id and then by skill, like {example}"}
-        triples, not_by_skill = [], []
-        for item_id, by_skill in answers.items():
-            if not isinstance(by_skill, dict):
-                not_by_skill.append(item_id)
-            elif item_id in self.skills and item_id not in self.batch:
-                self.run.skill_first += len(by_skill)
-                triples += [(inner_id, item_id, answer) for inner_id, answer in by_skill.items()]
-            else:
-                triples += [(item_id, skill, answer) for skill, answer in by_skill.items()]
-        given = [finding.from_given(item_id, skill, answer)
-                 for triple in triples for item_id, skill, answer in self.unnested(*triple)]
+        triples, not_by_skill = self.triples(finding, answers)
+        given = [finding.from_given(item_id, skill, answer) for item_id, skill, answer in triples]
         kept, refused, not_asked, changed = self.keep(given)
         if kept == 0 and answers == self.last_given:
             self.stuck = "it sent the same answers again, unchanged, and none of them could be recorded"
@@ -201,6 +187,41 @@ class Toolkit:
                                    for (item_id, skill), before, after in changed] or None,
                        "refused": refused, "not_asked": by_why(not_asked),
                        "unanswered": unanswered, "needs_impact": needs_impact or None})
+
+    def triples(self, finding, answers):
+        # every (item id, skill, answer) in answers, at whatever level it was given, and the items not given by skill
+        triples, not_by_skill = [], []
+        for key, entries in answers.items():
+            if not isinstance(entries, dict):
+                not_by_skill.append(key)
+            elif key in self.skills and key not in self.batch:  # by skill and then by item
+                self.run.skill_first += len(entries)
+                for item_id, answer in entries.items():
+                    triples += self.unnested(item_id, key, answer)
+            else:
+                for skill, answer in self.item_answers(finding, key, entries).items():
+                    triples += self.unnested(key, skill, answer)
+        return triples, not_by_skill
+
+    def item_answers(self, finding, item_id, entries):
+        fields = {key: value for key, value in entries.items() if key in finding.GIVEN.model_fields}
+        by_skill = {key: value for key, value in entries.items() if key not in fields}
+        if not fields:
+            return by_skill
+        if len(by_skill) == 1:
+            owner = next(iter(by_skill))
+        elif not by_skill and len(self.skills) == 1:
+            owner = next(iter(self.skills))
+        else:
+            bare = [skill for skill, answer in by_skill.items()
+                    if isinstance(answer, str) and answer.strip().lower() in ("fail", "unsure")]
+            owner = bare[0] if len(bare) == 1 else None
+        if owner is None:
+            return by_skill
+        self.run.fields_beside += 1
+        answer = by_skill.get(owner, {})
+        by_skill[owner] = {**fields, **answer} if isinstance(answer, dict) else {**fields, "verdict": answer}
+        return by_skill
 
     def unnested(self, item_id, skill, answer):
         if not isinstance(answer, dict):
@@ -229,14 +250,15 @@ class Toolkit:
         return self.record(finding, given)
 
     def record_tool(self, finding):
-        answer_type = self.answer_type(finding)
+        answer_type = finding.REASONED
 
         @docstring_with(example=self.answers_example(finding), fail=finding.fail_example())
         def record_findings(answers: dict[str, dict[str, answer_type]]):  # pyright: ignore[reportInvalidTypeForm]
-            """Records your answers, in answers by item id and then by skill, like {example}: "pass" for a pass,
-            and for a fail or an unsure an object with its reason, like {fail}. One answer for each item and skill. The
-            answers it records are kept, so don't send them again. Returns how many answers it recorded; the earlier
-            answers that a later fail replaced (changed); the ones it refused, by why, to give again fixed; the ones
+            """Records your answers, in answers by item id and then by skill, like {example}: each answer an object
+            that starts with its reason, and then gives its verdict: pass, fail or unsure, a fail also with its impact
+            and suggested_fix, like {fail}. One answer for each item and skill. The answers it records are kept, so
+            don't send them again. Returns how many answers it recorded; the earlier answers that a later fail
+            replaced (changed); the ones it refused, by why, to give again fixed; the ones
             it didn't take because this part doesn't ask them (not_asked), by why, so check their ids and skills
             against what the tools listed; the items still without an answer (unanswered), each with the skills it
             still needs; and the fails it recorded without their impact (needs_impact), to give again with it. When

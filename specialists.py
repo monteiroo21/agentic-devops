@@ -32,10 +32,9 @@ class RatedVerdict(Verdict):
 
 # the placeholders of the examples of a fail and an unsure that the agents are shown
 PLACEHOLDERS = {"reason": "<what shows the problem, in a few words>", "unsure_reason": "<what is missing to decide>",
+                "pass_reason": "<what shows it meets the rule, in a few words>",
                 "impact": "<critical, serious, moderate or minor>", "suggested_fix": "<how to fix it, in a few words>"}
 
-# A fail or an unsure as record_findings takes it, under its item's id and then its skill, where a pass is the word
-# "pass": each item and skill has one key, so a call can't give it both a pass and a fail
 class FindingAnswer(BaseModel):
     reason: str = Field(description="What decides it, in a few words: for a fail, the fact that shows the problem; for "
                                     "an unsure, what is missing to decide.")
@@ -82,10 +81,19 @@ class FindingAnswer(BaseModel):
                     break
         return self
 
-# One answer as the code keeps it: record_findings makes it from a "pass", or from a FindingAnswer, with the item and
-# skill it was given under
+class ReasonedAnswer(FindingAnswer):
+    reason: str = Field(description="What decides it, in a few words, written before the verdict: for a pass, what "
+                                    "shows it meets the rule; for a fail, the fact that shows the problem; for an "
+                                    "unsure, what is missing to decide.")
+    verdict: Literal["pass", "fail", "unsure"]
+    impact: Literal[*IMPACTS, ""] = Field(  # pyright: ignore[reportInvalidTypeForm]
+        "", description="For a fail: how much the problem hurts the site's visitors, as the skill's Impact says. "
+                        "Empty for a pass or an unsure.")
+
 class AgentFinding(BaseModel):
     GIVEN: ClassVar = FindingAnswer  # what record_findings takes for a fail or an unsure
+    REASONED: ClassVar = ReasonedAnswer  # what it shows for every answer
+    PASS_EXAMPLE: ClassVar = {"reason": PLACEHOLDERS["pass_reason"], "verdict": "pass"}
     # what a fail and an unsure look like, for the prompt and for a fail or unsure given as a bare word
     FAIL_EXAMPLE: ClassVar = {"reason": PLACEHOLDERS["reason"], "verdict": "fail", "impact": PLACEHOLDERS["impact"],
                               "suggested_fix": PLACEHOLDERS["suggested_fix"]}
@@ -104,13 +112,13 @@ class AgentFinding(BaseModel):
 
     @classmethod
     def from_given(cls, item_id, skill, given):
-        # one answer as record_findings was sent it, read on its own, so that one written wrong is refused alone: when
-        # the call's schema checked them all, one such answer made the call refused with every answer in it, and qwen
-        # wrote it all again (on 11-19, a pass written as an object, twice, 7 minutes each time)
         verdict = given.get("verdict") if isinstance(given, dict) else given
         verdict = verdict.strip().lower() if isinstance(verdict, str) else None
         if verdict == "pass":
-            return cls(item_id=item_id, skill=skill, verdict="pass")  # written as an object too: its other fields go
+            reason = given.get("reason") if isinstance(given, dict) else None
+            reason = reason.strip() if isinstance(reason, str) else ""
+            return cls(item_id=item_id, skill=skill, verdict="pass",  # written as an object too: its reason is kept
+                       reason="" if reason in PLACEHOLDERS.values() else reason)
         if verdict in ("fail", "unsure") and not isinstance(given, dict):
             return cls(item_id=item_id, skill=skill, verdict=verdict)  # a bare word: refused for its missing reason
         if verdict in ("fail", "unsure"):
@@ -122,7 +130,8 @@ class AgentFinding(BaseModel):
             else:
                 return cls(item_id=item_id, skill=skill, **answer.model_dump())
         return cls(item_id=item_id, skill=skill, verdict="unsure",
-                   unreadable=f'not an answer: give "pass", or for a fail an object like {cls.fail_example()}')
+                   unreadable="not an answer: give an object with its reason first, like "
+                              f"{json.dumps(cls.PASS_EXAMPLE, ensure_ascii=False)} or {cls.fail_example()}")
 
     def answer(self, element):
         failed = self.verdict == "fail"
@@ -335,6 +344,7 @@ class Run:
     invented: int = 0  # answers for ids or skills its tools never showed
     skill_first: int = 0  # answers given by skill and then by item id, which were read the other way round
     nested: int = 0  # answers given inside the same item's answer for another skill, which were taken out of it
+    fields_beside: int = 0  # answers whose reason, verdict, impact or fix were given beside their skill, not inside
     tool_calls: Counter = field(default_factory=Counter)  # by tool
     read: list[str] = field(default_factory=list)  # the items whose linked page it read
     findings: list[dict] = field(default_factory=list)  # its accepted answers, with what the code adds to them
@@ -357,7 +367,8 @@ class Run:
             "not_replaced": [f"{item_id} {skill}: {recorded}, then {sent}"
                              for (item_id, skill), recorded, sent in self.not_replaced],
             "omitted_first": len(self.first_missing or []), "refusals": self.refusals, "invented": self.invented,
-            "skill_first": self.skill_first, "nested": self.nested, "tool_calls": dict(self.tool_calls), "destinations_read": self.read,
+            "skill_first": self.skill_first, "nested": self.nested,
+            "fields_beside": self.fields_beside, "tool_calls": dict(self.tool_calls), "destinations_read": self.read,
             **{key: self.usage[key] for key in USAGE},
             "model_s": round(self.usage["model_s"], 1), "collect_s": round(self.collect_s, 1),
             "findings": self.findings,
