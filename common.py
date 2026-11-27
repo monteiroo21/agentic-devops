@@ -37,6 +37,9 @@ class GeminiConfig(Section):
 class OllamaConfig(Section):
     url: str
     max_output_tokens: int
+    timeout_s: float  # how long a request may take before it is dropped, unless its arguments carry a timeout_s
+    temperature: float
+    top_p: float
 
 class AgentConfig(Section):
     max_rejections: int
@@ -44,6 +47,7 @@ class AgentConfig(Section):
     max_invalid_reports: int
     max_tool_retries: int
     max_requests: int
+    max_cut_off_retries: int  # times a run goes on after a reply cut off at the output cap, told to write less
 
 class WorkflowConfig(Section):
     batch_size: int
@@ -78,6 +82,7 @@ class LinksConfig(Section):
     max_page_bytes: int
     max_page_text_chars: int
     workflow_page_text_chars: int
+    summary_words: int  # how many of a linked page's first words the link checker keeps, for get_destination_summary
 
 class OrchestratorConfig(Section):
     prompts: Path
@@ -87,6 +92,22 @@ class OrchestratorConfig(Section):
     look_per_call: int  # the most items look_at shows at once
     max_fact_chars: int  # how much of each text analyze_pages shows of what a worker was shown
     max_missing_listed: int  # how many of the pages and items still to do a rejected report lists
+
+class FleetConfig(Section):
+    folder: Path  # coordinator.md, the orchestrator's prompt, and <agent>.md, each agent's definition
+    skills: Path  # <agent>/<skill>/SKILL.md, each agent's skills
+    agents: list[str]  # the agents the orchestrator can use, by file name, in the order its prompt lists them
+    max_requests: int  # the orchestrator's model calls in a run
+    pages_per_call: int  # the most pages run_static_check takes at once
+    tasks_per_call: int  # the most tasks delegate takes at once
+    batch_size: int  # the most links, images or axe-core items one agent run checks; a task with more has more runs
+    max_output_tokens: int  # --max-output-tokens' default: the most tokens an agent may write per turn, thinking included
+    timeout_s: float  # how long an agent's request may take before it is dropped; the run then fails, it isn't resent
+    page_text_words: int  # how many words of the page's text get_text_sample returns per call
+    section_words: int  # how many words of the text under each heading get_headings returns
+    part_words: int  # how many words of each passage with a lang of its own get_page_meta returns
+    max_reason_chars: int  # how much of an agent's reason delegate shows the orchestrator
+    max_missing_listed: int  # how many agents and static checks still to run a rejected report lists
 
 class CrawlConfig(Section):
     folder: Path
@@ -111,6 +132,7 @@ class Config(Section):
     accessibility: AccessibilityConfig
     links: LinksConfig
     orchestrator: OrchestratorConfig
+    fleet: FleetConfig
     crawl: CrawlConfig
 
 def load_config(path=CONFIG_PATH):
@@ -121,6 +143,8 @@ def load_config(path=CONFIG_PATH):
     config.links.skills = path.parent / config.links.skills
     config.links.prompts = path.parent / config.links.prompts
     config.orchestrator.prompts = path.parent / config.orchestrator.prompts
+    config.fleet.folder = path.parent / config.fleet.folder
+    config.fleet.skills = path.parent / config.fleet.skills
     config.crawl.folder = path.parent / config.crawl.folder
     return config
 
@@ -168,9 +192,13 @@ def model_name(args):
     return args.model or getattr(CONFIG.models, args.backend)
 
 def model_and_settings(args):
+    # the fleet's agents carry a timeout of their own, shorter than the analyzers'
+    timeout_s = getattr(args, "timeout_s", None) or CONFIG.ollama.timeout_s
     return make_model(args.backend, model_name(args), think=not args.no_think,
                       max_output_tokens=args.max_output_tokens, ollama_url=CONFIG.ollama.url,
-                      thinking_level=CONFIG.gemini.thinking_level, retry_attempts=CONFIG.gemini.retry_attempts)
+                      thinking_level=CONFIG.gemini.thinking_level, retry_attempts=CONFIG.gemini.retry_attempts,
+                      ollama_timeout_s=timeout_s, ollama_temperature=CONFIG.ollama.temperature,
+                      ollama_top_p=CONFIG.ollama.top_p)
 
 # Reports
 
@@ -328,12 +356,8 @@ def object_answer(properties, required):
     return {"type": "object", "properties": properties, "required": required}
 
 def list_answer(*positions):
-    # an answer written as a list with one value per position, which takes the model fewer tokens than an object's
-    # keys. The model never sees the schema, so the judge's prompt says what each position is
     return {"type": "array", "prefixItems": list(positions)}
 
-# FORMAT is the key the answers come under and their JSON schema.
-# The reason comes before the verdict, so the model explains before it decides
 class Verdict(BaseModel):
     FIELDS: ClassVar = ("id", "reason", "verdict")  # the positions of an answer's list
     FORMAT: ClassVar = ("verdicts", answers_schema("verdicts", list_answer(

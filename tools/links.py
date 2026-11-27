@@ -33,7 +33,7 @@ client = httpx.Client(
 )
 
 IGNORED_LINK_RELS = {"preconnect", "dns-prefetch"}
-HIDDEN_FIELDS = {"verdict", "time_ms"}  # the model must judge each link itself, and timings don't help it
+HIDDEN_FIELDS = {"verdict", "time_ms", "words", "word_count"}
 
 # Set by remember_results for a site run, so a URL that many of its pages link to is only requested once
 known_checks = None
@@ -62,6 +62,11 @@ def title_and_heading(soup):
     heading = (h1.get_text(" ", strip=True) or None) if h1 else None
     return title, heading
 
+def main_text(soup):
+    # the page's visible text, from its main content if it marks one, so menus and footers don't take up the start
+    root = soup.find("main") or soup.body or soup
+    return " ".join(root.get_text(" ", strip=True).split())
+
 def read_start(response, limit=LINKS.max_page_bytes):
     body = b""
     for chunk in response.iter_bytes():
@@ -74,9 +79,10 @@ def check_url(url):
     return known_or_new(known_checks, url, lambda: request_url(url))
 
 def request_url(url):
-    # one GET per link, like a browser; HTML pages also give their title and first heading
+    # one GET per link, like a browser; HTML pages also give their title, first heading, first words and word count
     result = {"url": url, "status": None, "final_url": None, "redirects": [], "content_type": None,
-              "title": None, "heading": None, "error": None, "time_ms": None, "verdict": None}
+              "title": None, "heading": None, "words": None, "word_count": None, "error": None, "time_ms": None,
+              "verdict": None}
     start = time.perf_counter()
     try:
         with client.stream("GET", url) as response:
@@ -110,7 +116,10 @@ def request_url(url):
             verdict=verdict,
         )
         if html is not None:
-            result["title"], result["heading"] = title_and_heading(page_soup(html))
+            soup = page_soup(html)
+            result["title"], result["heading"] = title_and_heading(soup)
+            words = main_text(soup).split()
+            result["words"], result["word_count"] = " ".join(words[:LINKS.summary_words]) or None, len(words)
     result["time_ms"] = round((time.perf_counter() - start) * 1000)
     return result
 
@@ -180,9 +189,7 @@ def read_page_text(url, max_chars):
 
     soup = page_soup(response.text)
     title, heading = title_and_heading(soup)
-    # Prefer the main content, so menus and footers don't use up the text budget
-    root = soup.find("main") or soup.body or soup
-    text = " ".join(root.get_text(" ", strip=True).split())
+    text = main_text(soup)
     result.update(
         title=title,
         heading=heading,

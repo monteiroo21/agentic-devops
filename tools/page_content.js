@@ -54,9 +54,12 @@
                            ...(inLayout(el) ? {layout: true} : {})});
         } else if (el.localName === "img") {
             const link = el.closest("a[href]");
+            const caption = el.closest("figure")?.querySelector("figcaption");
             images.push({selector: selector(el), src: el.getAttribute("src"), alt: el.getAttribute("alt"),
                          link_text: link ? clean(link.innerText) : null, context: context(el),
-                         heading: headingFor(el)});
+                         heading: headingFor(el),
+                         // for the fleet's image agent only: the other modes leave these two out
+                         caption: caption ? clean(caption.innerText) || null : null, link_url: link ? link.href : null});
         } else {
             links.push({selector: selector(el), text: clean(el.innerText), href: el.href,
                         aria_label: el.getAttribute("aria-label"), title: el.getAttribute("title"),

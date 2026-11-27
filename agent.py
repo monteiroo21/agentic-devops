@@ -4,15 +4,15 @@ import time
 from collections import Counter
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from pydantic_ai import (Agent, BinaryContent, ModelAPIError, ModelRetry, RetryPromptPart, Tool, ToolOutput,
-                         ToolReturnPart, UnexpectedModelBehavior, UsageLimitExceeded, UsageLimits)
+from dataclasses import replace
+from pydantic_ai import (Agent, BinaryContent, ModelAPIError, ModelHTTPError, ModelRequest, ModelRetry,
+                         RetryPromptPart, TextOutput, Tool, ToolOutput, ToolReturnPart, UnexpectedModelBehavior,
+                         UsageLimitExceeded, UsageLimits, UserPromptPart, capture_run_messages)
 from pydantic_ai.capabilities import ProcessHistory
 from analyzers import ANALYZERS
 from chat_backends import read_response
 from common import (CONFIG, make_parser, model_and_settings, model_name, parse_args, report_fields, report_path,
                     skill_files, skill_instructions, skills_prompt, trace_to_logfire)
-
-# The model calls the tools itself and submits one report
 
 class SkillTools:
     def __init__(self, skills):
@@ -64,18 +64,52 @@ def printable(value):
         return f"<{value.media_type}, {len(value.data)} bytes>"
     return str(value)
 
-def run_agent(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(), session=None,
-              request_limit=CONFIG.agent.max_requests, process_history=None):
-    # process_history rewrites the conversation before each model request, like clearing results no longer needed
+def cut_off(error):
+    # Ollama answers a tool call cut off at the output cap with an error, not with the part of it the model wrote:
+    # HTTP 500, "invalid tool call arguments … unexpected end of JSON input"
+    text = f"{error} {getattr(error, 'body', '')}".lower()
+    return (isinstance(error, ModelHTTPError) and error.status_code == 500
+            and ("unexpected end of json input" in text or "invalid tool call arguments" in text))
+
+def run_agent(*args, **kwargs):
+    return asyncio.run(run_agent_async(*args, **kwargs))
+
+async def run_agent_async(args, system_prompt, user_prompt, tools, submission, review, reject, toolsets=(),
+                          session=None, request_limit=CONFIG.agent.max_requests, process_history=None,
+                          output_name="submit_report", text_submission=False, cut_off_message=None,
+                          read_reply=None, stuck=None):
     model, settings = model_and_settings(args)
     name = model_name(args)
     limits = CONFIG.agent
     output_retries = limits.max_text_replies + limits.max_rejections + limits.max_invalid_reports
+    usage = Counter()
+
+    def from_text(text: str):
+        recorded = read_reply(text) if read_reply else None
+        if recorded is not None:
+            told, done = recorded
+            usage["replies_recorded"] += 1
+            print(f"=====Recorded the answers in {name}'s reply=====")
+            if not done:
+                raise ModelRetry(told)
+            print(f"{told}\n")
+        if not submission.model_fields:
+            submitted = submission()
+        else:
+            start, end = text.find("{"), text.rfind("}")
+            try:
+                submitted = submission.model_validate(json.loads(text[start:end + 1]) if 0 <= start < end else None)
+            except ValueError:  # not JSON, or not in the submission's shape
+                raise ModelRetry(f"Hand in your answers by calling {output_name}.")
+        usage["text_submissions"] += 1
+        print(f"=====Took the submission from {name}'s reply=====")
+        return submitted
+
+    output_type = ToolOutput(submission, name=output_name)
     agent = Agent(model, instructions=system_prompt, tools=tools, toolsets=toolsets, model_settings=settings,
-                  output_type=ToolOutput(submission, name="submit_report"),
+                  output_type=[output_type, TextOutput(from_text)] if text_submission else output_type,
                   retries={"tools": limits.max_tool_retries, "output": output_retries},
                   capabilities=[ProcessHistory(process_history)] if process_history else None)
-    usage = Counter()
 
     @agent.output_validator
     def check_report(report):
@@ -98,14 +132,17 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
         if turn.truncated:
             print(f"====={name} was cut off at the output token limit=====")
 
-        if not turn.tool_calls:
+        if not turn.tool_calls and text_submission:
+            usage["text_replies"] += 1  # read as a submission, and sent back if it isn't one
+        elif not turn.tool_calls:
             if usage["text_replies"] >= limits.max_text_replies:
                 print(f"====={name} has no more function calls=====")
                 return False
             usage["text_replies"] += 1
             print(f"=====No tool call, asking {name} to call a tool=====")
-        for tool_name in turn.tool_calls:
-            print(f"====={name} wants to use the {tool_name} tool=====")
+        for tool_name, args in zip(turn.tool_calls, turn.tool_args):
+            # the arguments as the model wrote them, before validation drops a field it doesn't know
+            print(f"====={name} wants to use the {tool_name} tool=====\n{args}")
         return True
 
     def show_request(request):
@@ -117,11 +154,16 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
             elif isinstance(part, RetryPromptPart):
                 print(f"=====Sent back to {name}=====\n{part.model_response()}\n")
 
-    async def run():
+    current = {}  # the attempt running now, whose usage a continuation carries on
+
+    async def attempt(prompt, history, run_usage):
         with agent.parallel_tool_call_execution_mode("sequential"):
             usage_limits = UsageLimits(request_limit=request_limit)
-            async with session or nullcontext(), agent.iter(user_prompt, usage_limits=usage_limits) as agent_run:
+            async with agent.iter(prompt, message_history=history, usage=run_usage,
+                                  usage_limits=usage_limits) as agent_run:
+                current["run"] = agent_run
                 last = time.perf_counter()
+                resumed = history is not None  # its first request was shown before it was cut off
                 async for node in agent_run:
                     # the time since the last node went to running it: the model's reply, or the tools it called
                     now = time.perf_counter()
@@ -133,14 +175,42 @@ def run_agent(args, system_prompt, user_prompt, tools, submission, review, rejec
                             return None
                     elif Agent.is_model_request_node(node):
                         usage["tools_s"] += elapsed
-                        show_request(node.request)
+                        if not resumed:
+                            show_request(node.request)
+                        resumed = False
+                        why = stuck() if stuck else None
+                        if why:
+                            print(f"=====The run stopped: {why}=====")
+                            return None
                 return agent_run.result.output
 
+    async def run():
+        # a reply cut off at the output cap is answered by going on with the same conversation, told why: sent again as
+        # it was, the request would only be cut off again. Ollama doesn't return the part it wrote, so nothing in it
+        # was taken, and the tools' results and the answers recorded before it are kept
+        prompt, history, run_usage = user_prompt, None, None
+        async with session or nullcontext():
+            while True:
+                with capture_run_messages() as messages:
+                    try:
+                        return await attempt(prompt, history, run_usage)
+                    except ModelAPIError as error:
+                        if (cut_off_message is None or not cut_off(error)
+                                or usage["cut_off_retries"] >= limits.max_cut_off_retries
+                                or not messages or not isinstance(messages[-1], ModelRequest)):
+                            raise
+                usage.update(cut_off_retries=1, truncated_replies=1)
+                print(f"====={name} was cut off at the output token limit in the middle of a tool call, so it is "
+                      f"asked to go on in smaller calls ({usage['cut_off_retries']} of "
+                      f"{limits.max_cut_off_retries})=====\n{cut_off_message}\n")
+                parts = [part for part in messages[-1].parts
+                         if not (isinstance(part, UserPromptPart) and part.content == cut_off_message)]
+                history = [*messages[:-1], replace(messages[-1], parts=[*parts, UserPromptPart(cut_off_message)])]
+                prompt, run_usage = None, current["run"].usage
+
     try:
-        submitted = asyncio.run(run())
+        submitted = await run()
     except (UnexpectedModelBehavior, UsageLimitExceeded, ModelAPIError) as e:
-        # out of retries, a reply cut off in the middle of a tool call, the request limit, or an error from the
-        # model's API that its own retries didn't get past, like a rate limit
         print(f"=====The run stopped: {e}=====")
         submitted = None
 

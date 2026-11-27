@@ -62,8 +62,17 @@ class Analyzer:
     def instructions(self, skill_name, ids):
         raise NotImplementedError  # what a question's ids are, then how the skill says to judge them
 
+    def questions_for(self, name, questions):
+        # one kind of question, like alt-text: a list of (criterion, what its ids are, its entries, its options).
+        # questions holds the page's elements and answers so far, which some kinds depend on
+        raise NotImplementedError
+
+    def ask(self, name, questions):
+        for criterion, ids, entries, options in self.questions_for(name, questions):
+            questions.ask(criterion, ids, entries, **options)
+
     def ask_questions(self, questions):
-        raise NotImplementedError  # asks each question with questions.ask(); a yield waits for the answers so far
+        raise NotImplementedError  # asks each question with ask(); a yield waits for the answers so far
 
     def workflow_report(self, questions):
         raise NotImplementedError  # the findings, the verdicts, and the report fields only this analyzer has

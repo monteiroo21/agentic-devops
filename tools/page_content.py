@@ -5,6 +5,7 @@ from tools.browser import page_fields, visit
 ACCESSIBILITY = CONFIG.accessibility
 # Runs in the page: what a reader sees, for the judgements axe can't make
 PAGE_CONTENT_JS = (Path(__file__).parent / "page_content.js").read_text()
+FLEET_IMAGE_FIELDS = ("caption", "link_url")  # only the fleet's image agent is shown these
 
 async def content_on(page):
     return await page.evaluate(PAGE_CONTENT_JS)
@@ -32,7 +33,8 @@ def content_for_model(tool_result):
         **({"truncated": True} if len(text) > max_chars else {}),
         "headings": [item_for_model(heading, "text") for heading in content["headings"]],
         "images_total": len(content["images"]),
-        "images": [item_for_model(image, "link_text") for image in content["images"][:max_items]],
+        "images": [item_for_model({key: value for key, value in image.items() if key not in FLEET_IMAGE_FIELDS},
+                                  "link_text") for image in content["images"][:max_items]],
         "links_total": len(content["links"]),
         "links": [item_for_model(link, "text") for link in content["links"][:max_items]],
         "parts_total": len(content["parts"]),

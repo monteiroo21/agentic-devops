@@ -2,11 +2,14 @@ models:
   gemini: gemini-3.5-flash-lite
   ollama: qwen3:4b-instruct
 gemini:
-  thinking_level: HIGH
+  thinking_level: LOW
   retry_attempts: 8
 ollama:
   url: http://localhost:11434/v1
   max_output_tokens: 4096
+  timeout_s: 1800
+  temperature: 0.7
+  top_p: 0.8
 
 agent:
   max_rejections: 2
@@ -14,6 +17,7 @@ agent:
   max_invalid_reports: 3
   max_tool_retries: 2
   max_requests: 50
+  max_cut_off_retries: 2
 workflow:
   batch_size: 8
   max_retries: 2
@@ -46,6 +50,7 @@ links:
   max_page_bytes: 524288
   max_page_text_chars: 2000
   workflow_page_text_chars: 600
+  summary_words: 25
 
 orchestrator:
   prompts: prompts/orchestrator
@@ -54,6 +59,22 @@ orchestrator:
   evidence_per_call: 10
   look_per_call: 5
   max_fact_chars: 100
+  max_missing_listed: 30
+
+fleet:
+  folder: agents  # coordinator.md, the orchestrator's prompt, and <agent>.md, each agent's definition
+  skills: skills  # <agent>/<skill>/SKILL.md, with references/examples.md: each agent's skills
+  agents: [link, page, image, axe-review]
+  max_requests: 150
+  pages_per_call: 10
+  tasks_per_call: 32
+  batch_size: 10
+  max_output_tokens: 2000
+  timeout_s: 1500
+  page_text_words: 150
+  section_words: 15
+  part_words: 30
+  max_reason_chars: 150
   max_missing_listed: 30
 
 crawl:
