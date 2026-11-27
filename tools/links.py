@@ -1,0 +1,217 @@
+import re
+import time
+from urllib.parse import urldefrag, urlparse, urlsplit
+import httpx
+import lxml.html
+from bs4 import BeautifulSoup
+from common import CONFIG
+
+LINKS = CONFIG.links
+ACTION_PATTERNS = [re.compile(pattern, re.IGNORECASE) for pattern in CONFIG.crawl.skip_patterns]
+
+class ActionRefused(Exception):
+    pass
+
+def action_pattern(url, patterns=ACTION_PATTERNS):
+    # the skip pattern the URL's path and query match, like log-?out for /logout, or None
+    parts = urlsplit(url)
+    target = parts.path + (f"?{parts.query}" if parts.query else "")
+    return next((pattern.pattern for pattern in patterns if pattern.search(target)), None)
+
+def refuse_actions(request):
+    # runs before every request, each redirect included: a GET to a URL that looks like an action, like a logout
+    # link, could change something on the site, so it is never sent
+    pattern = action_pattern(str(request.url))
+    if pattern:
+        raise ActionRefused(f"not requested: {request.url} looks like an action (matches {pattern!r})")
+
+client = httpx.Client(
+    follow_redirects=True,
+    timeout=LINKS.timeout_s,
+    headers={"User-Agent": LINKS.user_agent},
+    event_hooks={"request": [refuse_actions]},
+)
+
+IGNORED_LINK_RELS = {"preconnect", "dns-prefetch"}
+HIDDEN_FIELDS = {"verdict", "time_ms", "words", "word_count"}
+
+# Set by remember_results for a site run, so a URL that many of its pages link to is only requested once
+known_checks = None
+known_texts = None
+
+def remember_results():
+    global known_checks, known_texts
+    known_checks, known_texts = {}, {}
+
+def known_or_new(known, key, run):
+    if known is None:
+        return run()
+    if key not in known:
+        known[key] = run()
+    return dict(known[key])  # a copy, so what one caller changes doesn't reach the others
+
+def page_soup(html):
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "template"]):
+        tag.decompose()  # not visible to a reader
+    return soup
+
+def title_and_heading(soup):
+    h1 = soup.find("h1")
+    title = (soup.title.get_text(strip=True) or None) if soup.title else None
+    heading = (h1.get_text(" ", strip=True) or None) if h1 else None
+    return title, heading
+
+def main_text(soup):
+    # the page's visible text, from its main content if it marks one, so menus and footers don't take up the start
+    root = soup.find("main") or soup.body or soup
+    return " ".join(root.get_text(" ", strip=True).split())
+
+def read_start(response, limit=LINKS.max_page_bytes):
+    body = b""
+    for chunk in response.iter_bytes():
+        body += chunk
+        if len(body) >= limit:
+            break
+    return body[:limit].decode(response.encoding or "utf-8", errors="replace")
+
+def check_url(url):
+    return known_or_new(known_checks, url, lambda: request_url(url))
+
+def request_url(url):
+    # one GET per link, like a browser; HTML pages also give their title, first heading, first words and word count
+    result = {"url": url, "status": None, "final_url": None, "redirects": [], "content_type": None,
+              "title": None, "heading": None, "words": None, "word_count": None, "error": None, "time_ms": None,
+              "verdict": None}
+    start = time.perf_counter()
+    try:
+        with client.stream("GET", url) as response:
+            content_type = response.headers.get("content-type", "")
+            html = read_start(response) if "text/html" in content_type else None
+    except httpx.TooManyRedirects:
+        result.update(error="too many redirects", verdict="broken")
+    except httpx.TimeoutException:
+        result.update(error="timeout", verdict="unreachable")
+    except ActionRefused as e:
+        result.update(error=str(e), verdict="skipped")
+    except Exception as e:
+        # DNS failures, refused connections, SSL errors, invalid URLs, ...
+        result.update(error=str(e) or type(e).__name__, verdict="unreachable")
+    else:
+        if response.status_code in (403, 429):
+            verdict = "blocked"  # often bot protection or rate limiting, not necessarily a broken link
+        elif response.status_code >= 400:
+            verdict = "broken"
+        elif response.status_code >= 300:
+            verdict = "broken" # a redirect that didn't resolve to a 2xx page is considered broken
+        elif response.history:
+            verdict = "redirect"
+        else:
+            verdict = "ok"
+        result.update(
+            status=response.status_code,
+            final_url=str(response.url),
+            redirects=[{"url": str(r.url), "status": r.status_code} for r in response.history],
+            content_type=content_type.split(";")[0] or None,
+            verdict=verdict,
+        )
+        if html is not None:
+            soup = page_soup(html)
+            result["title"], result["heading"] = title_and_heading(soup)
+            words = main_text(soup).split()
+            result["words"], result["word_count"] = " ".join(words[:LINKS.summary_words]) or None, len(words)
+    result["time_ms"] = round((time.perf_counter() - start) * 1000)
+    return result
+
+def extract_links(url):
+    try:
+        response = client.get(url)
+    except Exception as e:
+        return {"url": url, "final_url": None, "error": str(e) or type(e).__name__, "links": []}
+    if response.status_code >= 400:
+        return {"url": url, "final_url": str(response.url), "error": f"HTTP {response.status_code}", "links": []}
+    if "text/html" not in response.headers.get("content-type", ""):
+        return {"url": url, "final_url": str(response.url), "error": "not an HTML page", "links": []}
+
+    page_url = str(response.url)  # after redirects, so relative links resolve correctly
+    try:
+        doc = lxml.html.fromstring(response.content, base_url=page_url)
+    except Exception as e:
+        return {"url": url, "final_url": page_url, "error": f"could not parse the page: {e}", "links": []}
+    doc.make_links_absolute(handle_failures="ignore")
+    page_host = urlparse(page_url).netloc
+
+    links = []
+    seen = set()
+    for element, attribute, link, _ in doc.iterlinks():
+        if element.tag == "link" and IGNORED_LINK_RELS & set((element.get("rel") or "").lower().split()):
+            continue
+        link_url, _ = urldefrag(link.strip())
+        if urlparse(link_url).scheme not in ("http", "https") or link_url in seen or link_url == page_url:
+            continue  # skips mailto:, tel:, javascript:, data:, duplicates and links to this same page
+        seen.add(link_url)
+        text = " ".join(element.text_content().split()) if element.tag == "a" and attribute == "href" else ""
+        links.append({
+            "url": link_url,
+            "text": text or None,
+            "tag": element.tag,
+            "attribute": attribute,  # None for links inside CSS in a <style> block
+            "internal": urlparse(link_url).netloc == page_host,
+        })
+    return {"url": url, "final_url": page_url, "error": None, "links": links}
+
+def check_urls(urls):
+    return [check_url(url) for url in urls]
+
+def check_page_links(url):
+    page = extract_links(url)
+    for link, result in zip(page["links"], check_urls([link["url"] for link in page["links"]])):
+        link["check"] = result
+    return page
+
+def fetch_page_text(url, max_chars=LINKS.max_page_text_chars):
+    return known_or_new(known_texts, (url, max_chars), lambda: read_page_text(url, max_chars))
+
+def read_page_text(url, max_chars):
+    # returns the page's title and a short piece of its visible text
+    result = {"url": url, "final_url": None, "status": None, "content_type": None,
+              "title": None, "heading": None, "text": None, "truncated": False, "error": None}
+    try:
+        response = client.get(url)
+    except Exception as e:
+        result["error"] = str(e) or type(e).__name__
+        return result
+    content_type = response.headers.get("content-type", "")
+    result.update(final_url=str(response.url), status=response.status_code,
+                  content_type=content_type.split(";")[0] or None)
+    if "text/html" not in content_type:
+        return result  # PDFs, images, ...: no text to read
+
+    soup = page_soup(response.text)
+    title, heading = title_and_heading(soup)
+    text = main_text(soup)
+    result.update(
+        title=title,
+        heading=heading,
+        text=text[:max_chars],
+        truncated=len(text) > max_chars,
+    )
+    return result
+
+def compact(result, leave_out=()):
+    kept = {key: value for key, value in result.items()
+            if key not in HIDDEN_FIELDS and key not in leave_out and value is not None and value != []}
+    if kept.get("final_url") == result.get("url"):
+        kept.pop("final_url", None)
+    return kept
+
+def link_for_model(link):
+    # a link and its check as one object, since the check repeats the link's URL
+    return {**compact(link, leave_out=("attribute", "check")), **compact(link["check"], leave_out=("url",))}
+
+def page_links_for_model(page):
+    links = [link_for_model(link) for link in page["links"]]
+    return {**compact(page, leave_out=("links",)), "links": links}
+
+def page_text_for_model(page):
+    return compact(page, leave_out=() if page["truncated"] else ("truncated",))

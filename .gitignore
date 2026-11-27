@@ -10,3 +10,11 @@ wheels/
 .venv
 
 .env
+node_modules/
+reports/
+crawls/
+.logfire/
+papers/*.pdf
+papers/notes
+slm-vs-llm.csv
+logs/
